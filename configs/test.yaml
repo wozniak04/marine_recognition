@@ -1,0 +1,34 @@
+project_name: testowy preprocessing
+experiment_name: preprocesing
+random_seed: 42
+
+paths:
+    raw_csv: data/raw/Ship_Operation_example_dataset_unclassified_source_GPS_1.csv
+    processed_dir: data/processed
+
+data:
+    target_column: operation
+    feature_columns:
+        - signaldate
+        - LAT
+        - LON
+        - prev_LAT
+        - prev_LON
+        - prev_signaldate
+        - traveled
+        - dt
+        - velocity_m_s
+        - velocity_knot
+    class_names:
+        - at_anchor
+        - in_port
+        - at_sea_adrift
+        - at_sea_voyage
+    test_size: 0.2
+    validation_size: 0.2
+
+preprocessing:
+    strategy: brak
+
+model:
+    name: brak
