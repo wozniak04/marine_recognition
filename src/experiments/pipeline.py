@@ -6,7 +6,7 @@ from typing import Any
 from src.utils.config import ProjectConfig
 from src.utils.logger import create_logger
 
-from src.data.preprocessing import signaldate_conv, calculate_velocity
+from src.data.preprocessing import DataPreprocessor
 
 class ExperimentBase(ABC):
     def __init__(self, config: ProjectConfig) -> None:
@@ -22,7 +22,7 @@ class ExperimentBase(ABC):
         raise NotImplementedError
     
     def preprocess(self, df: pd.DataFrame) -> None:
-        df = signaldate_conv(df)
-        df = calculate_velocity(df)
+        preprocessor = DataPreprocessor(drop_prev=True)
+        df_clean = preprocessor.process(df)
         
-        df.to_csv(self.config.paths.processed_dir / "Ship_operation.csv")
+        df_clean.to_csv(self.config.paths.processed_dir / "Ship_operation.csv", index=False)
