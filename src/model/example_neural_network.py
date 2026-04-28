@@ -22,20 +22,18 @@ class ShipManeuverLSTM(nn.Module):
         
     def forward(self, x, return_confidence=False):
         # x: (batch, seq_len, features)
-        
         x = self.layer_norm(x)
         out, _ = self.lstm(x)
         
-        # OPCJA A: Many-to-One (klasyfikujemy tylko ostatni punkt - Twój wybór)
-        # last_step = out[:, -1, :]
-        # logits = self.fc(last_step)
-        
-        # OPCJA B: Many-to-Many (klasyfikujemy każdy punkt w oknie - lepsze na styku czynności)
-        logits = self.fc(out) 
+        # Wybieramy tylko ostatni krok czasowy (Many-to-One)
+        # To sprawi, że wyjście będzie miało wymiar [batch, num_classes]
+        last_step = out[:, -1, :] 
+        logits = self.fc(last_step) 
         
         if return_confidence:
-            # Zamiana logitów na prawdopodobieństwo (0.0 - 1.0)
-            confidence = F.softmax(logits, dim=-1)
+            # Używamy softmax, jeśli klasy się wykluczają, 
+            # lub sigmoid, jeśli statek może robić kilka rzeczy naraz
+            confidence = torch.sigmoid(logits) 
             return logits, confidence
             
         return logits
