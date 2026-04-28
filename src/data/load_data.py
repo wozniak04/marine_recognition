@@ -1,6 +1,4 @@
 import pandas as pd
-import numpy as np
-from ports import check_if_in_port
 def load_data(file_path):
     data = pd.read_csv(file_path)
     data['signaldate'] = pd.to_datetime(data['signaldate'])

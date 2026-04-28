@@ -1,30 +1,47 @@
 import pandas as pd
 import numpy as np
 
-def calculate_turn(lat1, lon1, lat2, lon2, previous_bearing=None):
+def calculate_turn_vectorized(lats, lons):
     """
-    Oblicza skręt. Jeśli previous_bearing jest None, zwraca 0 jako skręt 
-    oraz nowo obliczony kurs.
+    Oblicza kursy (bearings) i skręty (turn_angles) dla całych kolumn danych.
+    Przyjmuje: lats, lons jako Series lub tablice numpy.
+    Zwraca: (turn_angles, bearings) jako tablice numpy.
     """
-    # 1. Obliczamy aktualny kurs na podstawie ruchu (zawsze potrzebujemy 2 punktów)
-    phi1, lam1 = np.radians(lat1), np.radians(lon1)
-    phi2, lam2 = np.radians(lat2), np.radians(lon2)
+    # Konwersja na radiany
+    phi = np.radians(lats)
+    lam = np.radians(lons)
     
+    # Przesunięcia (shift) - obliczamy relację punktu i do punktu i+1
+    phi1 = phi[:-1].values
+    phi2 = phi[1:].values
+    lam1 = lam[:-1].values
+    lam2 = lam[1:].values
     d_lon = lam2 - lam1
+
+    # Obliczanie Bearing (Kursu)
     y = np.sin(d_lon) * np.cos(phi2)
     x = np.cos(phi1) * np.sin(phi2) - np.sin(phi1) * np.cos(phi2) * np.cos(d_lon)
     
-    current_bearing = np.degrees(np.arctan2(y, x)) % 360
+    # Kursy w stopniach [0, 360]
+    bearings = np.degrees(np.arctan2(y, x)) % 360
     
-    # 2. Obsługa przypadku "startu" (brak poprzedniego kursu)
-    if previous_bearing is None or np.isnan(previous_bearing):
-        return 0.0, current_bearing  # Brak skrętu na starcie
+    # Aby zachować tę samą długość co wejście, dodajemy NaN na końcu (ostatni punkt nie ma następcy)
+    bearings = np.append(bearings, np.nan)
     
-    # 3. Obliczamy skręt jeśli mamy dane
-    turn = current_bearing - previous_bearing
-    turn_angle = (turn + 180) % 360 - 180
+    # Obliczanie Skrętu (Turn Angle)
+    # Różnica między kursem obecnym a poprzednim
+    prev_bearings = np.roll(bearings, 1) # Przesuwamy w dół
+    turn = bearings - prev_bearings
     
-    return turn_angle, current_bearing
+    # Normalizacja do zakresu [-180, 180]
+    turn_angles = (turn + 180) % 360 - 180
+    
+    # Obsługa pierwszego elementu (brak poprzedniego kursu = brak skrętu)
+    turn_angles[0] = 0.0
+    # Usuwamy ostatni turn_angle, bo bazował na nieistniejącym kursie
+    turn_angles = np.nan_to_num(turn_angles, nan=0.0)
+
+    return turn_angles, bearings
 
 # Przykładowe użycie:
 # df = pd.read_csv('training_data/Ship_Operation_example_dataset_unclassified_source_GPS_1.csv').sort_values('signaldate')
