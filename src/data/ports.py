@@ -1,9 +1,10 @@
 import pandas as pd
 from scipy.spatial import cKDTree
-def load_data(file_path):
+
+def load_ports_data(file_path):
     return pd.read_csv(file_path)
 
-ports=load_data('data/EU_Port_Codes.csv')
+ports=load_ports_data('training_data/EU_Port_Codes.csv')
 tree = cKDTree(ports[['LAT', 'LON']].values)
 
 def check_if_in_port(lat, lon, radius_meters=2000):
@@ -20,4 +21,4 @@ def check_if_in_port(lat, lon, radius_meters=2000):
     return ports.iloc[indices[0]]
 
 # Example usage:
-print(check_if_in_port(17.9000001,-62.85000001))
+#print(check_if_in_port(17.9000001,-62.85000001))
