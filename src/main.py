@@ -17,7 +17,7 @@ model.load_state_dict(torch.load("ship_model.pth", weights_only=True))
 model.eval()
 # 3. Przykład predykcji na nowym oknie
 labels = ["Outlier GPS", "In Port", "At Sea Anchor", "At Sea Adrift", "At Sea Voyage"]
-sample_window = df2.iloc[9600:9600+10]
+sample_window = df2.iloc[13624:13624+10]
 # (W praktyce w predict podawałbyś surowe dane z GPS)
 print("prawda: ",Y[14],flush=True) # Prawdziwe etykiety dla tego okna
 state, conf = predict_maneuver(model, sample_window, my_scaler, labels)
