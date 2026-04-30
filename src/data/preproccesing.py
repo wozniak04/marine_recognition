@@ -1,12 +1,15 @@
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
-
+import joblib
 from calculations.calculate_speed import calculate_speed_haversine
 from calculations.calculate_turn_angle import calculate_turn_vectorized
+from data.ports import check_if_in_port
 
+def get_scaler():
+    return joblib.load('scaler.pkl')
 
-def create_windows(df, window_size=10):
+def create_windows_for_training(df, window_size=10):
     # 1. Porządki
     df['signaldate'] = pd.to_datetime(df['signaldate'])
     df = df.sort_values('signaldate').reset_index(drop=True)
@@ -30,7 +33,7 @@ def create_windows(df, window_size=10):
     # 3. Skalowanie
     # Dodajemy time_diff do feature_cols zgodnie z Twoją prośbą
     feature_cols = ["speed", "turn_angle", "In Port", "time_diff"]
-    label_cols = ["Outlier GPS", "In Port", "At Sea Anchor", "At Sea Adrift", "At Sea Voyage"]
+    label_cols = ["In Port", "At Sea Anchor", "At Sea Adrift", "At Sea Voyage"]
     # if df['time_diff'].nunique() <= 1:
     #     feature_cols = ["speed", "turn_angle", "In Port"]
     # Skalujemy tylko kolumny ciągłe. In Port zostawiamy w spokoju (0/1)
@@ -53,10 +56,39 @@ def create_windows(df, window_size=10):
 
     return np.array(X), np.array(Y), scaler
 
-# Przykładowe użycie:
-# windowsx, windowsy, scaler = create_windows(
-#     pd.read_csv("training_data/Ship_Operation_example_dataset_classified_2.csv"),
-#     window_size=10,
-# )
-# print(windowsx[0:2])
-# print(windowsy[0:2])
+def prepare_data_for_prediction(df):
+    # 1. Porządki
+    df['signaldate'] = pd.to_datetime(df['signaldate'])
+    df = df.sort_values('signaldate').reset_index(drop=True)
+    # Bezpieczny time_diff (jeśli 0, dajemy 60s żeby uniknąć dzielenia przez zero w prędkości)
+    df['time_diff'] = df['signaldate'].diff().dt.total_seconds().fillna(60.0)
+    df.loc[df['time_diff'] <= 0, 'time_diff'] = 60.0
+
+    # 2. Prędkość i Skręt
+    # Zakładamy że calculate_speed_haversine przyjmuje Series
+    df['speed'] = calculate_speed_haversine(
+        df['LAT'].shift(1), df['LON'].shift(1), 
+        df['LAT'], df['LON'], df['time_diff']
+    ).fillna(0)
+
+
+    turn_angles, bearings = calculate_turn_vectorized(df['LAT'], df['LON'])
+    df['turn_angle'] = turn_angles
+    df['bearing'] = bearings
+    df['In Port'] = df.apply(lambda row: check_if_in_port(row['LAT'], row['LON']), axis=1)
+    # 3. Skalowanie
+
+    feature_cols = ["speed", "turn_angle", "In Port", "time_diff"]
+    
+
+    continuous_features = ["speed", "turn_angle", "time_diff"]
+    
+    scaler = get_scaler()  # Wczytujemy scaler wytrenowany na danych treningowych
+    df[continuous_features] = scaler.fit_transform(df[continuous_features])
+
+    #data_feat = df.to_numpy(dtype=np.float32)
+   
+
+    
+    return df
+
