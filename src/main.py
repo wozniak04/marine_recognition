@@ -1,5 +1,5 @@
 import torch
-from data.load_data import load_data
+from src.data.dataset import load_data
 from data.preproccesing import create_windows
 from model.example_neural_network import ShipManeuverLSTM
 from model.training import train_model
