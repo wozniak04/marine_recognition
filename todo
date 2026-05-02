@@ -1,1 +1,4 @@
 - Wygładzić LAT/LON po 3, wyliczyć średnią prędkość, zobaczyć czy z nią jakoś nie da się usunąć szumów
+- Sprawdzić zmiany kursów / prędkości
+- Rekord 171592
+- Co zrobić z pierwszym wierszem, który nie ma prev_values? Aktualnie IQR wywala go przez to

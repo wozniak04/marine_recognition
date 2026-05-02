@@ -3,7 +3,9 @@ experiment_name: preprocesing
 random_seed: 42
 
 paths:
-    raw_csv: data/raw/Ship_Operation_example_dataset_unclassified_source_GPS_1.csv
+    raw_csv: data/raw/unclassified/Ship_Operation_example_dataset_unclassified_source_GPS_1.csv
+    # raw_csv: data/raw/classified/Ship_Operation_example_dataset_classified.csv
+    # raw_csv: data/raw/classified/Ship_Operation_example_dataset_classified_2.csv
     processed_dir: data/processed
 
 data:
