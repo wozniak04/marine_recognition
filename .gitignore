@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+.env
+.pytest_cache/
+
+# Data & outputs
+data/raw/
+data/ports/
+data/processed/
+models/
+reports/
+
+# Model artifacts
+*.pth
+*.pt
+*.pkl
+*.joblib
+*.npz
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude
+.claude/
+
+# uv
+uv.lock

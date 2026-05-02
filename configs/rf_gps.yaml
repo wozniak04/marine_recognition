@@ -1,0 +1,49 @@
+experiment_name: rf_gps_v1
+variant: A
+random_seed: 42
+
+paths:
+  raw_dir: data/raw/classified
+  ports_csv: data/ports/EU_Port_Codes.csv
+  processed_dir: data/processed
+  models_dir: models
+  reports_dir: reports
+
+data:
+  source: gps
+  input_files:
+    - Ship_Operation_example_dataset_classified.csv
+    - Ship_Operation_example_dataset_classified_2.csv
+  labeled: true
+  sampling_interval_seconds: 60
+
+preprocessing:
+  drop_zero_coords: true
+  apply_smoothing: false
+
+outlier:
+  method: iqr
+  iqr_multiplier: 3.0
+  max_speed_knots: 30.0
+  columns: []
+
+port:
+  radius_meters: 5000.0
+
+features:
+  window_size: 15
+  stride: 1
+
+model:
+  name: random_forest
+  params:
+    n_estimators: 300
+    max_depth: 20
+    class_weight: balanced
+    random_state: 42
+
+training:
+  test_size: 0.2
+  validation_size: 0.15
+  split_strategy: episode
+  class_weights: balanced

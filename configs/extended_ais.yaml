@@ -1,0 +1,52 @@
+experiment_name: extended_ais_v1
+variant: B
+random_seed: 42
+
+paths:
+  raw_dir: data/raw/classified
+  ports_csv: data/ports/EU_Port_Codes.csv
+  processed_dir: data/processed
+  models_dir: models
+  reports_dir: reports
+
+data:
+  source: ais
+  input_files: []
+  labeled: false
+  sampling_interval_seconds: 60
+
+preprocessing:
+  drop_zero_coords: true
+  apply_smoothing: false
+
+outlier:
+  method: iqr
+  iqr_multiplier: 3.0
+  max_speed_knots: 30.0
+  columns: []
+
+port:
+  radius_meters: 5000.0
+
+features:
+  window_size: 15
+  stride: 1
+
+model:
+  name: extended_ais
+  params:
+    ais_file: Ship_Operation_example_dateset_AIS_based_data.csv
+    voyage_speed_kn: 3.0
+    maneuver_speed_kn: 2.0
+    stationary_speed_kn: 0.5
+    turn_dcog_threshold: 30.0
+    drift_angle_threshold: 15.0
+    shifting_speed_min_kn: 1.0
+    shifting_speed_max_kn: 5.0
+    anchor_spread_max_m: 200.0
+
+training:
+  test_size: 0.2
+  validation_size: 0.15
+  split_strategy: episode
+  class_weights: balanced

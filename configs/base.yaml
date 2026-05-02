@@ -1,0 +1,47 @@
+experiment_name: base_preprocessing
+variant: A
+random_seed: 42
+
+paths:
+  raw_dir: data/raw/classified
+  ports_csv: data/ports/EU_Port_Codes.csv
+  processed_dir: data/processed
+  models_dir: models
+  reports_dir: reports
+
+data:
+  source: gps
+  input_files:
+    - Ship_Operation_example_dataset_classified.csv
+    - Ship_Operation_example_dataset_classified_2.csv
+  labeled: true
+  sampling_interval_seconds: 60
+
+preprocessing:
+  lat_range: [-90.0, 90.0]
+  lon_range: [-180.0, 180.0]
+  drop_zero_coords: true
+  smoothing_window: 3
+  apply_smoothing: false
+
+outlier:
+  method: iqr
+  iqr_multiplier: 3.0
+  max_speed_knots: 30.0
+  columns: []
+
+port:
+  radius_meters: 2000.0
+
+features:
+  window_size: 10
+  stride: 1
+
+model:
+  name: rule_based
+
+training:
+  test_size: 0.2
+  validation_size: 0.15
+  split_strategy: episode
+  class_weights: balanced

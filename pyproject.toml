@@ -1,0 +1,54 @@
+[project]
+name = "marine-recognition"
+version = "0.1.0"
+description = "Ship maneuver detection from AIS/GPS time-series data"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pandas>=2.2",
+    "numpy>=2.0",
+    "scipy>=1.14",
+    "scikit-learn>=1.5",
+    "pydantic>=2.10",
+    "pyyaml>=6.0",
+    "matplotlib>=3.9",
+    "seaborn>=0.13",
+    "folium>=0.17",
+    "joblib>=1.4",
+]
+
+[project.optional-dependencies]
+ml = [
+    "torch>=2.2",
+    "hmmlearn>=0.3",
+    "xgboost>=2.1",
+    "lightgbm>=4.5",
+    "optuna>=4.0",
+]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.8",
+    "pyright>=1.1",
+    "pre-commit>=4.0",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
+
+[tool.pyright]
+pythonVersion = "3.12"
+typeCheckingMode = "basic"
+venvPath = "."
+venv = ".venv"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
