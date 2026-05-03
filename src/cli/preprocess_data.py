@@ -20,7 +20,7 @@ def main() -> int:
     preprocessor = DataPreprocessor(drop_prev=True)
     df_clean = preprocessor.process(df)
     
-    df_clean.to_csv(f"data/processed/{data_path.stem}.csv")
+    df_clean.to_csv(f"data/processed/{data_path.stem}.csv", index=False)
     logger.info(f"Preprocessing wykonany dla: {data_path}")
     return 0
     
