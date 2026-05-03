@@ -33,7 +33,7 @@ class ShipStateFSM:
         self.min_episode_minutes: int = p.get("min_episode_minutes", 5)
 
     def classify(self, df: pd.DataFrame) -> pd.DataFrame:
-        df = df.copy()
+        df = df.copy().reset_index(drop=True)
 
         gap_boundaries = self._find_gap_boundaries(df)
         df = self._compute_rolling_features(df, gap_boundaries)
