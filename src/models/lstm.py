@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +15,6 @@ logger = create_logger(__name__)
 
 
 class ShipLSTM(nn.Module):
-    """Bidirectional LSTM for ship state classification."""
 
     def __init__(
         self,
@@ -34,34 +34,36 @@ class ShipLSTM(nn.Module):
             bidirectional=True,
             dropout=dropout if num_layers > 1 else 0,
         )
-        self.dropout = nn.Dropout(dropout)
-        self.fc = nn.Linear(hidden_size * 2, num_classes)
+        self.head = nn.Sequential(
+            nn.Linear(hidden_size * 2, hidden_size),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_size, num_classes),
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.norm(x)
         out, _ = self.lstm(x)
-        out = out[:, -1, :]
-        out = self.dropout(out)
-        return self.fc(out)
+        center = out.shape[1] // 2
+        return self.head(out[:, center, :])
 
 
 class LSTMTrainer:
-    """Training and inference wrapper for ShipLSTM."""
 
     def __init__(self, params: dict[str, Any] | None = None) -> None:
         p = params or {}
         self.hidden_size: int = p.get("hidden_size", 128)
         self.num_layers: int = p.get("num_layers", 2)
         self.dropout: float = p.get("dropout", 0.3)
-        self.epochs: int = p.get("epochs", 80)
+        self.epochs: int = p.get("epochs", 120)
         self.batch_size: int = p.get("batch_size", 64)
-        self.lr: float = p.get("learning_rate", 0.001)
-        self.patience: int = p.get("patience", 15)
-        self.window_size: int = p.get("window_size", 15)
+        self.lr: float = p.get("learning_rate", 0.002)
+        self.patience: int = p.get("patience", 25)
+        self.window_size: int = p.get("window_size", 30)
+        self.num_classes: int = p.get("num_classes", 4)
 
         self.feature_cols: list[str] = p.get("feature_cols", [
-            "sog_knots", "dcog_deg", "acceleration_ms2",
-            "distance_m", "cog_deg", "rot_deg_s",
+            "sog_knots", "delta_lat", "delta_lon",
         ])
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -72,16 +74,19 @@ class LSTMTrainer:
     def _build_sequences(
         self, X: np.ndarray, y: np.ndarray | None, gap_mask: np.ndarray | None
     ) -> tuple[np.ndarray, np.ndarray | None]:
-        """Create sliding window sequences, respecting gap boundaries."""
         w = self.window_size
+        n = len(X)
+        gap_flags = gap_mask if gap_mask is not None else np.zeros(n, dtype=bool)
+
+        # Precompute cumulative gap count to quickly check if a window contains a gap
+        gap_cum = np.cumsum(gap_flags.astype(int))
+
         sequences = []
         labels = []
 
-        gap_set = set(np.where(gap_mask)[0]) if gap_mask is not None else set()
-
-        for i in range(len(X) - w + 1):
-            window_range = range(i, i + w)
-            if any(idx in gap_set for idx in window_range):
+        for i in range(n - w + 1):
+            gaps_in_window = gap_cum[i + w - 1] - (gap_cum[i - 1] if i > 0 else 0)
+            if gaps_in_window > 0:
                 continue
             sequences.append(X[i : i + w])
             if y is not None:
@@ -125,14 +130,14 @@ class LSTMTrainer:
             input_size=n_features,
             hidden_size=self.hidden_size,
             num_layers=self.num_layers,
-            num_classes=4,
+            num_classes=self.num_classes,
             dropout=self.dropout,
         ).to(self.device)
 
         weight = torch.tensor(class_weights, dtype=torch.float32).to(self.device) if class_weights is not None else None
-        criterion = nn.CrossEntropyLoss(weight=weight)
-        optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.lr)
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=self.epochs)
+        criterion = nn.CrossEntropyLoss(weight=weight, label_smoothing=0.05)
+        optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.lr, weight_decay=1e-4)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=self.epochs, eta_min=self.lr * 0.01)
 
         train_loader = self._make_loader(X_train_seq, y_train_seq, shuffle=True)
         val_loader = self._make_loader(X_val_seq, y_val_seq, shuffle=False) if y_val_seq is not None else None
@@ -161,8 +166,9 @@ class LSTMTrainer:
 
                 if (epoch + 1) % 10 == 0:
                     logger.info(
-                        "Epoch %d/%d: train_loss=%.4f val_loss=%.4f val_acc=%.4f",
+                        "Epoch %d/%d: train_loss=%.4f val_loss=%.4f val_acc=%.4f lr=%.6f",
                         epoch + 1, self.epochs, train_loss, val_loss, val_acc,
+                        optimizer.param_groups[0]["lr"],
                     )
 
                 if patience_counter >= self.patience:
@@ -177,7 +183,6 @@ class LSTMTrainer:
     def predict(
         self, X: np.ndarray, gap_mask: np.ndarray | None = None
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Returns (state_indices, confidences) for each point."""
         X_n = self._normalize(X)
         X_seq, _ = self._build_sequences(X_n, None, gap_mask)
 
@@ -189,18 +194,25 @@ class LSTMTrainer:
             return predictions, confidences
 
         self.model.eval()
+        all_probs = []
         with torch.no_grad():
-            tensor = torch.tensor(X_seq, dtype=torch.float32).to(self.device)
-            logits = self.model(tensor)
-            probs = torch.softmax(logits, dim=1).cpu().numpy()
-            preds = probs.argmax(axis=1)
-            confs = probs.max(axis=1) * 100.0
+            for start in range(0, len(X_seq), self.batch_size):
+                batch = torch.tensor(X_seq[start:start + self.batch_size], dtype=torch.float32).to(self.device)
+                logits = self.model(batch)
+                probs = torch.softmax(logits, dim=1).cpu().numpy()
+                all_probs.append(probs)
+
+        probs = np.concatenate(all_probs, axis=0)
+        preds = probs.argmax(axis=1)
+        confs = probs.max(axis=1) * 100.0
 
         w = self.window_size
-        gap_set = set(np.where(gap_mask)[0]) if gap_mask is not None else set()
+        gap_flags = gap_mask if gap_mask is not None else np.zeros(n, dtype=bool)
+        gap_cum = np.cumsum(gap_flags.astype(int))
         seq_idx = 0
         for i in range(n - w + 1):
-            if any(idx in gap_set for idx in range(i, i + w)):
+            gaps_in_window = gap_cum[i + w - 1] - (gap_cum[i - 1] if i > 0 else 0)
+            if gaps_in_window > 0:
                 continue
             center = i + w // 2
             predictions[center] = preds[seq_idx]
@@ -209,11 +221,11 @@ class LSTMTrainer:
 
         mask = predictions == -1
         if mask.any():
-            valid_preds = predictions[~mask]
-            if len(valid_preds) > 0:
+            valid_indices = np.where(~mask)[0]
+            if len(valid_indices) > 0:
                 for i in np.where(mask)[0]:
-                    nearest = np.abs(np.where(~mask)[0] - i).argmin()
-                    predictions[i] = valid_preds[nearest]
+                    nearest = valid_indices[np.abs(valid_indices - i).argmin()]
+                    predictions[i] = predictions[nearest]
                     confidences[i] = 30.0
 
         return predictions, confidences
@@ -255,4 +267,43 @@ class LSTMTrainer:
         path.mkdir(parents=True, exist_ok=True)
         torch.save(self.model.state_dict(), path / "lstm_model.pt")
         np.savez(path / "scaler.npz", mean=self.scaler_mean, std=self.scaler_std)
+        meta = {
+            "feature_cols": self.feature_cols,
+            "hidden_size": self.hidden_size,
+            "num_layers": self.num_layers,
+            "num_classes": self.num_classes,
+            "dropout": self.dropout,
+            "window_size": self.window_size,
+        }
+        with open(path / "model_meta.json", "w") as f:
+            json.dump(meta, f, indent=2)
         logger.info("LSTM saved to %s", path)
+
+    @classmethod
+    def load(cls, path: Path, device: str | None = None) -> LSTMTrainer:
+        with open(path / "model_meta.json") as f:
+            meta = json.load(f)
+
+        trainer = cls(meta)
+        scaler = np.load(path / "scaler.npz")
+        trainer.scaler_mean = scaler["mean"]
+        trainer.scaler_std = scaler["std"]
+
+        if device is None:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        trainer.device = torch.device(device)
+
+        trainer.model = ShipLSTM(
+            input_size=len(meta["feature_cols"]),
+            hidden_size=meta["hidden_size"],
+            num_layers=meta["num_layers"],
+            num_classes=meta["num_classes"],
+            dropout=meta["dropout"],
+        ).to(trainer.device)
+
+        state_dict = torch.load(path / "lstm_model.pt", map_location=trainer.device, weights_only=True)
+        trainer.model.load_state_dict(state_dict)
+        trainer.model.eval()
+
+        logger.info("LSTM loaded from %s (features=%s)", path, meta["feature_cols"])
+        return trainer

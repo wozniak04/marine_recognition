@@ -1,6 +1,9 @@
-.PHONY: setup lint format typecheck test preprocess train evaluate export compare clean
+.PHONY: setup lint format typecheck test preprocess train infer evaluate export compare clean
 
 CONFIG ?= configs/base.yaml
+MODEL ?= models/lstm_gps_v1
+INPUT ?=
+OUTPUT ?=
 
 setup:
 	uv sync --all-extras
@@ -22,6 +25,9 @@ preprocess:
 
 train:
 	uv run python -m src.cli.train --config $(CONFIG)
+
+infer:
+	uv run python -m src.cli.infer --model $(MODEL) --input $(INPUT) $(if $(OUTPUT),--output $(OUTPUT),) $(if $(CONFIG:configs/base.yaml=),--config $(CONFIG),)
 
 evaluate:
 	uv run python -m src.cli.evaluate --config $(CONFIG)
