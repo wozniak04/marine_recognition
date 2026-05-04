@@ -1,0 +1,24 @@
+[2026-05-02 15:14:10 INFO]: [DataPreprocessor] ============ Wyszukiwanie outlier'ów z GPS ============
+[2026-05-02 15:14:10 INFO]: [DataPreprocessor] Nowych outlier'ów, przez braki danych GPS (NaN): 4389
+[2026-05-02 15:14:10 INFO]: [DataPreprocessor] Nowych outlier'ów, przez GPS poza zakresem (-90, 90) ; (-180, 180): 0
+[2026-05-02 15:14:10 INFO]: [DataPreprocessor] [Info]: Nowych outlier'ów, przez rekordy w punkcie (0, 0): 0
+[2026-05-02 15:14:10 INFO]: [DataPreprocessor] Nowych outlier'ów, przez duplikaty dat: 0
+[2026-05-02 15:14:10 INFO]: [DataPreprocessor] Nowych outlier'ów, przez GPS freeze: 1270
+[2026-05-02 15:14:10 INFO]: [DataPreprocessor] Wykryto łącznie: 5659 outlierów.
+[2026-05-02 15:14:10 INFO]: [DataPreprocessor] ============ Kinematyka ============
+[2026-05-02 15:14:11 INFO]: [DataPreprocessor] Statki z nienaturalną prędkością: 290
+[2026-05-02 15:14:11 INFO]: [DataPreprocessor] Wykryto 222584 statków dryfujących.
+[2026-05-02 15:14:11 INFO]: [DataPreprocessor] Statki z nienaturalnym przyspieszeniem: 169
+[2026-05-02 15:14:16 INFO]: [preprocess_data] Preprocessing wykonany dla: data\raw\unclassified\Ship_Operation_example_dataset_unclassified_source_GPS_1.csv
+[2026-05-02 20:40:08 INFO]: [DataPreprocessor] ============ Wyszukiwanie outlier'ów z GPS ============
+[2026-05-02 20:40:08 INFO]: [DataPreprocessor] Nowych outlier'ów, przez braki danych GPS (NaN): 4389
+[2026-05-02 20:40:08 INFO]: [DataPreprocessor] Nowych outlier'ów, przez GPS poza zakresem (-90, 90) ; (-180, 180): 0
+[2026-05-02 20:40:08 INFO]: [DataPreprocessor] [Info]: Nowych outlier'ów, przez rekordy w punkcie (0, 0): 0
+[2026-05-02 20:40:08 INFO]: [DataPreprocessor] Nowych outlier'ów, przez duplikaty dat: 0
+[2026-05-02 20:40:08 INFO]: [DataPreprocessor] Nowych outlier'ów, przez GPS freeze: 1270
+[2026-05-02 20:40:08 INFO]: [DataPreprocessor] Wykryto łącznie: 5659 outlierów.
+[2026-05-02 20:40:08 INFO]: [DataPreprocessor] ============ Kinematyka ============
+[2026-05-02 20:40:09 INFO]: [DataPreprocessor] Statki z nienaturalną prędkością: 290
+[2026-05-02 20:40:09 INFO]: [DataPreprocessor] Wykryto 222584 statków dryfujących.
+[2026-05-02 20:40:09 INFO]: [DataPreprocessor] Statki z nienaturalnym przyspieszeniem: 169
+[2026-05-02 20:40:14 INFO]: [preprocess_data] Preprocessing wykonany dla: data\raw\unclassified\Ship_Operation_example_dataset_unclassified_source_GPS_1.csv

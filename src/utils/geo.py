@@ -1,7 +1,7 @@
 from numpy import radians, sin, cos, sqrt, asin, atan2, degrees
 
-# Calculace traveled distance
-def haversine(lat1, lon1, lat2, lon2): 
+# Calculace traveled distance with haversine formula
+def calc_traveled_distance(lat1, lon1, lat2, lon2): 
     R = 6371000 # Earth's radius in meters
 
     lat1, lat2 = radians(lat1), radians(lat2)
@@ -15,6 +15,7 @@ def haversine(lat1, lon1, lat2, lon2):
     
     return distance
 
+# Calculate Course Over Ground (COG)
 def calc_course(lat1, lon1, lat2, lon2):
     lat1, lat2 = radians(lat1), radians(lat2)
     dlat = lat2 - lat1
