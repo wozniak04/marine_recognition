@@ -14,6 +14,7 @@ data/ports/
 data/processed/
 /models/
 reports/
+result/
 
 # Model artifacts
 *.pth
