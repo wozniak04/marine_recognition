@@ -59,6 +59,7 @@ class ModelConfig(BaseModel):
         "xgboost",
         "lightgbm",
         "hmm",
+        "hmm_ais",
         "lstm",
         "cnn_1d",
         "ensemble",

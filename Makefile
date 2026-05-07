@@ -27,7 +27,7 @@ train:
 	uv run python -m src.cli.train --config $(CONFIG)
 
 infer:
-	uv run python -m src.cli.infer --model $(MODEL) --input $(INPUT) $(if $(OUTPUT),--output $(OUTPUT),) $(if $(CONFIG:configs/base.yaml=),--config $(CONFIG),)
+	uv run python -m src.cli.infer --model $(MODEL) --input $(INPUT) $(if $(OUTPUT),--output $(OUTPUT),) $(if $(CONFIG:configs/base.yaml=),--config $(CONFIG),) $(if $(AIS),--ais,)
 
 evaluate:
 	uv run python -m src.cli.evaluate --config $(CONFIG)

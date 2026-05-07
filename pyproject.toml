@@ -15,6 +15,7 @@ dependencies = [
     "seaborn>=0.13",
     "folium>=0.17",
     "joblib>=1.4",
+    "global-land-mask>=1.0.0",
 ]
 
 [project.optional-dependencies]

@@ -6,10 +6,11 @@ from typing import Any
 
 import pandas as pd
 
-from src.data.dataset import load_classified_data, load_port_database
-from src.data.outliers import OutlierDetector
-from src.data.ports import PortMatcher
+from src.data.dataset import load_ais_csv, load_classified_data, load_port_database
+from src.data.outliers import OutlierDetector, detect_teleports, fix_teleports
+from src.data.ports import PortMatcher, build_port_matcher, discover_ports
 from src.data.preprocessing import DataPreprocessor
+from src.data.ais_preprocessing import AISPreprocessor
 from src.data.splitter import split_by_episodes
 from src.evaluation.metrics import compute_all_metrics, save_metrics
 from src.utils.config import OPERATION_ID_TO_STATE, ProjectConfig
@@ -18,7 +19,6 @@ from src.utils.seeding import set_global_seed
 
 
 class BaseExperiment(ABC):
-    """Base class for all ship state detection experiments."""
 
     def __init__(self, config: ProjectConfig) -> None:
         self.config = config
@@ -68,31 +68,53 @@ class BaseExperiment(ABC):
         return results
 
     def _load_and_preprocess(self) -> pd.DataFrame:
-        df = load_classified_data(self.config)
+        source = self.config.data.source
 
-        preprocessor = DataPreprocessor(self.config.preprocessing)
-        df = preprocessor.process(df)
+        if source == "ais":
+            df = self._load_ais_data()
+        else:
+            df = load_classified_data(self.config)
+            preprocessor = DataPreprocessor(self.config.preprocessing)
+            df = preprocessor.process(df)
+
+        teleport_mask = detect_teleports(df, max_speed_knots=self.config.outlier.max_speed_knots)
+        if teleport_mask.any():
+            df = fix_teleports(df, teleport_mask)
+            if source != "ais":
+                preprocessor = DataPreprocessor(self.config.preprocessing)
+                df = preprocessor.process(df)
 
         detector = OutlierDetector(self.config.outlier)
         df["outlier_gps"] = detector.detect(df).astype(int)
 
         ports_df = load_port_database(self.config)
-        matcher = PortMatcher(ports_df, self.config.port)
+        discovered = discover_ports(df)
+        matcher = build_port_matcher(ports_df, discovered, self.config.port)
         port_info = matcher.query_batch(df["LAT"].values, df["LON"].values)
         df = df.join(port_info)
 
         df.to_csv(self.processed_dir / "preprocessed.csv", index=False)
         return df
 
+    def _load_ais_data(self) -> pd.DataFrame:
+        ais_file = self.config.model.params.get("ais_file", "")
+        if ais_file:
+            ais_path = Path(self.config.paths.raw_dir).parent / "unclassified" / ais_file
+        else:
+            ais_path = Path(self.config.paths.raw_dir) / self.config.data.input_files[0]
+
+        df = load_ais_csv(ais_path)
+        preprocessor = AISPreprocessor()
+        return preprocessor.process(df)
+
     def _export_csv(self, df: pd.DataFrame) -> Path:
-        """Generate the final CSV matching the project brief format."""
         departure, destination = self._compute_port_locodes(df)
 
         output = pd.DataFrame({
             "signaldate": df["signaldate"],
             "LAT": df["LAT"],
             "LON": df["LON"],
-            "Outlier GPS": df["outlier_gps"],
+            "Outlier GPS": df["outlier_gps"] if "outlier_gps" in df.columns else 0,
             "In Port": (df["predicted_state"] == "port_stay").astype(int),
             "At Sea Voyage": (df["predicted_state"] == "voyage").astype(int),
             "At Sea Anchor": (df["predicted_state"] == "anchor").astype(int),
@@ -108,7 +130,6 @@ class BaseExperiment(ABC):
         return path
 
     def _compute_port_locodes(self, df: pd.DataFrame) -> tuple[list, list]:
-        """Determine departure/destination port for each voyage segment."""
         states = df["predicted_state"].values
         locodes = df.get("nearest_locode")
         n = len(df)
