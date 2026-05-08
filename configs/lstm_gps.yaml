@@ -28,10 +28,10 @@ outlier:
   columns: []
 
 port:
-  radius_meters: 5000.0
+  radius_meters: 3000.0
 
 features:
-  window_size: 15
+  window_size: 8
   stride: 1
 
 model:
@@ -44,13 +44,10 @@ model:
     batch_size: 64
     learning_rate: 0.001
     patience: 15
-    window_size: 15
+    window_size: 8
     feature_cols:
       - sog_knots
-      - dcog_deg
-      - acceleration_ms2
       - distance_m
-      - cog_deg
       - rot_deg_s
 
 training:

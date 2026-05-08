@@ -63,6 +63,7 @@ class ModelConfig(BaseModel):
         "cnn_1d",
         "ensemble",
         "extended_ais",
+        "hierarchical_lstm",
     ] = "rule_based"
     params: dict[str, Any] = Field(default_factory=dict)
 

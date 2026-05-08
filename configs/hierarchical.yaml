@@ -1,0 +1,29 @@
+experiment_name: hierarchical_model_test
+variant: A
+
+paths:
+  raw_dir: data/raw/classified
+  ports_csv: data/ports/EU_Port_Codes.csv
+
+data:
+  input_files:
+    - Ship_Operation_example_dataset_classified.csv
+    - Ship_Operation_example_dataset_classified_2.csv
+  labeled: true
+
+outlier:
+  method: iqr
+  iqr_multiplier: 3.0
+  max_speed_knots: 30.0
+  columns: []
+
+model:
+  name: hierarchical_lstm 
+  params:
+    window_size: 5
+    epochs: 15
+
+training:
+  test_size: 0.2
+  validation_size: 0.15
+  split_strategy: episode

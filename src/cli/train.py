@@ -25,7 +25,7 @@ def main() -> None:
     import src.experiments.hmm_experiment  # noqa: F401
     import src.experiments.lstm_experiment  # noqa: F401
     import src.experiments.rule_based  # noqa: F401
-
+    import src.experiments.hierarchical_experiment
     from src.experiments.registry import build_experiment
 
     experiment = build_experiment(config.model.name, config)
