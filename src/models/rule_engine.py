@@ -19,7 +19,7 @@ ALL_STATES = [STATE_PORT, STATE_VOYAGE, STATE_ANCHOR, STATE_ADRIFT]
 
 
 class ShipStateFSM:
-    """Rule-based ship state classifier using configurable thresholds."""
+    """Rule-based ship state classifier with port-aware logic."""
 
     def __init__(self, params: dict[str, Any] | None = None) -> None:
         p = params or {}
@@ -33,7 +33,7 @@ class ShipStateFSM:
         self.min_episode_minutes: int = p.get("min_episode_minutes", 5)
 
     def classify(self, df: pd.DataFrame) -> pd.DataFrame:
-        df = df.copy()
+        df = df.copy().reset_index(drop=True)
 
         gap_boundaries = self._find_gap_boundaries(df)
         df = self._compute_rolling_features(df, gap_boundaries)
@@ -41,6 +41,8 @@ class ShipStateFSM:
         states, confidences = self._apply_rules(df)
         df["predicted_state"] = states
         df["confidence"] = confidences
+
+        df["predicted_state"] = self._enforce_port_constraint(df)
 
         df["predicted_state"] = self._smooth_episodes(
             df["predicted_state"].values, gap_boundaries
@@ -132,24 +134,22 @@ class ShipStateFSM:
         net_disp_m: float,
         in_port: int,
     ) -> tuple[str, float]:
-        # VOYAGE: high speed, stable course
         if sog_kn >= self.voyage_speed_kn:
             excess = (sog_kn - self.voyage_speed_kn) / self.voyage_speed_kn
             conf = min(95.0, 70.0 + 25.0 * min(excess, 1.0))
             return STATE_VOYAGE, conf
 
-        # ADRIFT: low-medium speed, directional movement
         if self.adrift_speed_min_kn <= sog_kn <= self.adrift_speed_max_kn:
-            if net_disp_m > spread_m * 0.3 and spread_m > self.port_spread_max_m:
+            if net_disp_m > spread_m * 0.3 and spread_m > self.anchor_spread_max_m:
                 drift_signal = min(net_disp_m / max(spread_m, 1), 3.0) / 3.0
                 conf = min(90.0, 55.0 + 35.0 * drift_signal)
                 return STATE_ADRIFT, conf
 
-        # Low speed: PORT vs ANCHOR
         if sog_kn <= self.stationary_speed_kn:
-            if spread_m <= self.port_spread_max_m or in_port:
+            if spread_m <= self.port_spread_max_m:
                 tightness = max(0, 1.0 - spread_m / self.port_spread_max_m)
-                conf = min(95.0, 60.0 + 35.0 * tightness)
+                base = 75.0 if in_port else 60.0
+                conf = min(95.0, base + 20.0 * tightness)
                 return STATE_PORT, conf
             elif spread_m <= self.anchor_spread_max_m:
                 anchor_signal = (spread_m - self.port_spread_max_m) / (
@@ -158,18 +158,19 @@ class ShipStateFSM:
                 conf = min(90.0, 55.0 + 35.0 * min(anchor_signal, 1.0))
                 return STATE_ANCHOR, conf
 
-        # Fallback: ambiguous low speed
         if spread_m <= self.port_spread_max_m:
-            return STATE_PORT, 40.0
+            return STATE_PORT, 45.0 if in_port else 40.0
         if spread_m <= self.anchor_spread_max_m:
             return STATE_ANCHOR, 40.0
         return STATE_ADRIFT, 35.0
 
+    def _enforce_port_constraint(self, df: pd.DataFrame) -> np.ndarray:
+        """Spread-based classification already handles port vs anchor distinction."""
+        return df["predicted_state"].values.copy()
+
     def _smooth_episodes(
         self, states: np.ndarray, gap_boundaries: list[int]
     ) -> np.ndarray:
-        """Remove state flickers shorter than min_episode_minutes.
-        Never smooth across gap boundaries."""
         result = states.copy()
         min_len = self.min_episode_minutes
         gap_set = set(gap_boundaries)

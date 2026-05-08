@@ -89,6 +89,26 @@ make compare
 
 Wyświetla tabelę porównawczą accuracy i F1 per klasa dla wszystkich wytrenowanych modeli.
 
+### Inference (pretrenowany model)
+
+Pełny pipeline na nowych danych: raw CSV -> preprocessing -> outlier detection -> port matching -> LSTM predict -> output CSV.
+
+```bash
+# Minimalne wywołanie
+uv run python -m src.cli.infer \
+  --model models/lstm_gps_v1 \
+  --input data/raw/unclassified/nowy_statek.csv
+
+# Z własną ścieżką wyjściową i configiem preprocessingu
+uv run python -m src.cli.infer \
+  --model models/lstm_gps_v1 \
+  --input data.csv \
+  --output results.csv \
+  --config configs/lstm_gps.yaml
+```
+
+Wynik zapisywany do `reports/<model_name>/inference_output.csv` (domyślnie) lub do `--output`.
+
 ### Testy
 
 ```bash
@@ -145,7 +165,7 @@ training:
 | **XGBoost** | Gradient boosting na cechach okna czasowego |
 | **LightGBM** | Gradient boosting (Microsoft) na cechach okna czasowego |
 | **HMM** | Gaussian Hidden Markov Model — modeluje dynamikę Markowa stanów |
-| **LSTM** | Bidirectional LSTM — sieć rekurencyjna na sekwencjach czasowych |
+| **LSTM** | Bidirectional LSTM — sieć rekurencyjna na sekwencjach czasowych (3 cechy: SOG, delta_lat, delta_lon) |
 
 ## Wyniki (dataset: 30K punktów, 21 epizodów)
 
@@ -153,20 +173,28 @@ training:
 
 | Model | Train | Val | Test |
 |-------|------:|----:|-----:|
-| **Rule-based (FSM)** | 83.2% | **89.3%** | **98.3%** |
+| **LSTM** | 93.2% | **94.0%** | **85.4%** |
+| Rule-based (FSM) | 83.2% | 89.3% | 98.3%* |
 | Random Forest | 99.8% | 94.8% | 50.5% |
 | LightGBM | 99.8% | 93.4% | 38.2% |
 | XGBoost | 99.8% | 77.3% | 50.0% |
 | HMM | 88.3% | 58.8% | 83.0% |
-| LSTM | 86.6% | 63.5% | 73.6% |
+
+*Test set nie zawiera klasy adrift — rule-based korzysta z tego rozkładu.
+
+### Per-class F1 (LSTM, val set)
+
+| port_stay | anchor | adrift | voyage |
+|----------:|-------:|-------:|-------:|
+| 0.98 | 0.82 | 0.95 | 0.73 |
 
 ### Wnioski
 
-- **Rule-based wygrywa** przy małym datasecie — wiedza domenowa > ML (21 epizodów to za mało na generalizację).
+- **LSTM osiąga 94% val accuracy** z zaledwie 3 cechami (`sog_knots`, `delta_lat`, `delta_lon`).
+- **Rule-based** ma najlepszy test accuracy (98.3%), ale test set nie ma klasy adrift — łatwiejszy rozkład.
 - **Klasyczne ML** (RF, XGB, LightGBM) silnie overfitują: ~100% train vs 38-50% test.
-- **HMM** to najlepszy model ML — interpretowalana macierz przejść + 83% test.
-- **LSTM** przyzwoity (73.6% test), ale early stopping po 16 epokach sygnalizuje brak danych.
-- Z pełnym datasetem (więcej epizodów) modele ML powinny znacznie się poprawić.
+- **HMM** — interpretowalana macierz przejść, 83% test.
+- Z pełnym datasetem (więcej epizodów) wyniki ML powinny się dalej poprawić.
 
 ## Wariant B: GPS + AIS
 
@@ -213,12 +241,12 @@ marine_recognition/
   models/                # Zapisane modele (gitignored)
   reports/               # Metryki i wyniki (gitignored)
   src/
-    cli/                 # Entry points (preprocess, train, compare)
+    cli/                 # Entry points (preprocess, train, compare, infer)
     data/                # Loading, preprocessing, feature engineering, ports, outliers, splitter
     models/              # Implementacje modeli (rule_engine, classical, hmm, lstm)
     experiments/         # Orkiestracja eksperymentów (BaseExperiment + registry)
     evaluation/          # Metryki (accuracy, confusion matrix, per-class)
     utils/               # Config (Pydantic), geo (haversine), logger, seeding
-    visualization/       # Wykresy, mapy (Faza 6)
+    visualization/       # Wykresy, mapy
   tests/                 # Testy jednostkowe (pytest)
 ```

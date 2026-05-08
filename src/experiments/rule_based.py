@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pandas as pd
@@ -21,6 +22,11 @@ class RuleBasedExperiment(BaseExperiment):
         fsm = ShipStateFSM(self.config.model.params)
         self.logger.info("Rule-based model: no training needed, using configured thresholds")
         self.logger.info("Params: %s", self.config.model.params)
+
+        self.models_dir.mkdir(parents=True, exist_ok=True)
+        with open(self.models_dir / "rule_params.json", "w") as f:
+            json.dump(self.config.model.params, f, indent=2)
+
         return fsm
 
     def predict(self, model: Any, df: pd.DataFrame) -> pd.DataFrame:

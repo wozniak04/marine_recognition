@@ -11,7 +11,32 @@ from src.models.hmm import HMM_TO_STATE, OPERATION_TO_HMM, ShipHMM
 from src.models.rule_engine import ShipStateFSM
 from src.utils.config import OPERATION_ID_TO_STATE
 
-FEATURE_COLS = ["sog_knots", "dcog_deg", "acceleration_ms2"]
+GAP_THRESHOLD_S = 300
+
+DEFAULT_FEATURE_COLS = [
+    "sog_knots",
+    "rolling_spread_m",
+    "rolling_net_displacement_m",
+]
+
+
+def recompute_gaps_and_features(
+    df: pd.DataFrame, params: dict[str, Any] | None = None
+) -> pd.DataFrame:
+    df = df.copy().reset_index(drop=True)
+
+    time = pd.to_datetime(df["signaldate"])
+    dt = time.diff().dt.total_seconds().values
+    is_gap = np.zeros(len(df), dtype=bool)
+    is_gap[0] = True
+    is_gap[1:] = np.nan_to_num(dt[1:], nan=9999) > GAP_THRESHOLD_S
+    df["is_gap"] = is_gap.astype(int)
+
+    fsm = ShipStateFSM(params)
+    gap_boundaries = fsm._find_gap_boundaries(df)
+    df = fsm._compute_rolling_features(df, gap_boundaries)
+
+    return df
 
 
 @register_experiment("hmm")
@@ -22,13 +47,12 @@ class HMMExperiment(BaseExperiment):
         return "hmm"
 
     def train(self, train_df: pd.DataFrame, val_df: pd.DataFrame) -> dict:
-        fsm = ShipStateFSM({"rolling_window": 30})
-        train_df = train_df.copy().reset_index(drop=True)
-        train_df = fsm._compute_rolling_features(train_df, fsm._find_gap_boundaries(train_df))
+        train_df = recompute_gaps_and_features(train_df, self.config.model.params)
 
-        feature_cols = self.config.model.params.get("feature_cols", FEATURE_COLS)
-        if "rolling_spread_m" in train_df.columns:
-            feature_cols = [*feature_cols, "rolling_spread_m"]
+        feature_cols = self.config.model.params.get("feature_cols", DEFAULT_FEATURE_COLS)
+        feature_cols = [c for c in feature_cols if c in train_df.columns]
+
+        train_df = self._oversample_minority(train_df)
 
         X_train, y_train, lengths_train = self._prepare_sequences(train_df, feature_cols)
 
@@ -50,18 +74,116 @@ class HMMExperiment(BaseExperiment):
         hmm: ShipHMM = trained["hmm"]
         feature_cols: list[str] = trained["feature_cols"]
 
-        fsm = ShipStateFSM({"rolling_window": 30})
-        df = df.copy().reset_index(drop=True)
-        df = fsm._compute_rolling_features(df, fsm._find_gap_boundaries(df))
+        df = recompute_gaps_and_features(df, self.config.model.params)
 
         X, _, lengths = self._prepare_sequences(df, feature_cols)
+        lengths = self._split_long_segments(df, lengths)
 
-        state_indices, confidences = hmm.predict(X, lengths)
+        in_port = df["in_port"].values if "in_port" in df.columns else None
+        state_indices, confidences = hmm.predict(X, lengths, in_port=in_port)
 
         result = df.copy()
         result["predicted_state"] = [HMM_TO_STATE[i] for i in state_indices]
         result["confidence"] = confidences
 
+        return result
+
+    @staticmethod
+    def _split_long_segments(
+        df: pd.DataFrame, lengths: list[int], speed_threshold: float = 2.0
+    ) -> list[int]:
+        """Break long segments at regime transitions.
+
+        Boundaries are created at:
+        - Speed regime changes (stationary ↔ moving)
+        - Port proximity changes (in_port 0 ↔ 1)
+
+        Shorter segments let Viterbi start fresh at natural state boundaries
+        instead of locking into one state for thousands of points.
+        """
+        sog = df["sog_knots"].fillna(0).values if "sog_knots" in df.columns else None
+        in_port = df["in_port"].values if "in_port" in df.columns else None
+
+        if sog is None and in_port is None:
+            return lengths
+
+        new_lengths = []
+        offset = 0
+        for seg_len in lengths:
+            if seg_len <= 50:
+                new_lengths.append(seg_len)
+                offset += seg_len
+                continue
+
+            boundaries = set()
+            seg_end = offset + seg_len
+
+            if sog is not None:
+                seg_sog = sog[offset:seg_end]
+                moving = seg_sog > speed_threshold
+                for i in range(1, seg_len):
+                    if moving[i] != moving[i - 1]:
+                        boundaries.add(i)
+
+            if in_port is not None:
+                seg_port = in_port[offset:seg_end]
+                for i in range(1, seg_len):
+                    if seg_port[i] != seg_port[i - 1]:
+                        boundaries.add(i)
+
+            if not boundaries:
+                new_lengths.append(seg_len)
+                offset += seg_len
+                continue
+
+            cuts = sorted(boundaries)
+            prev = 0
+            for cut in cuts:
+                chunk = cut - prev
+                if chunk > 0:
+                    new_lengths.append(chunk)
+                prev = cut
+            remainder = seg_len - prev
+            if remainder > 0:
+                new_lengths.append(remainder)
+
+            offset += seg_len
+
+        return new_lengths
+
+    def _oversample_minority(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Duplicate minority-class episodes so HMM sees balanced state distributions."""
+        if "operation_id" not in df.columns:
+            return df
+
+        state_counts = df["operation_id"].value_counts()
+        if len(state_counts) <= 1:
+            return df
+
+        median_count = int(state_counts.median())
+        episodes = (df["operation_id"] != df["operation_id"].shift()).cumsum()
+        df = df.copy()
+        df["_ep"] = episodes
+
+        max_oversample = 3
+        parts = [df]
+        for state_id, count in state_counts.items():
+            if count >= median_count * 0.5:
+                continue
+            ratio = min(max_oversample, max(1, int(round(median_count / count)))) - 1
+            state_eps = df[df["operation_id"] == state_id]["_ep"].unique()
+            for _ in range(ratio):
+                for ep in state_eps:
+                    parts.append(df[df["_ep"] == ep])
+            self.logger.info(
+                "Oversampled state %s: %d → %dx (%d episodes)",
+                OPERATION_ID_TO_STATE.get(state_id, state_id),
+                count,
+                ratio + 1,
+                len(state_eps),
+            )
+
+        result = pd.concat(parts, ignore_index=True).drop(columns=["_ep"])
         return result
 
     def _prepare_sequences(

@@ -8,22 +8,14 @@ import pandas as pd
 
 from src.data.ais_preprocessing import AISPreprocessor
 from src.data.dataset import load_ais_csv, load_port_database
-from src.data.ports import PortMatcher
+from src.data.outliers import detect_teleports, fix_teleports
+from src.data.ports import build_port_matcher, discover_ports
 from src.experiments.registry import register_experiment
+from src.models.ais_classifier import AIS_TO_BASIC, AISRuleClassifier, EXTENDED_STATES
 from src.utils.config import ProjectConfig
 from src.utils.logger import create_logger
 
 logger = create_logger(__name__)
-
-EXTENDED_STATES = [
-    "port_stay",
-    "port_maneuver",
-    "voyage",
-    "anchor",
-    "adrift",
-    "turn",
-    "shifting",
-]
 
 EXTENDED_STATE_COLUMNS = {
     "port_stay": "In Port",
@@ -36,71 +28,8 @@ EXTENDED_STATE_COLUMNS = {
 }
 
 
-class AISRuleClassifier:
-    """Rule-based classifier for AIS data with extended states."""
-
-    def __init__(self, params: dict[str, Any] | None = None) -> None:
-        p = params or {}
-        self.voyage_speed_kn: float = p.get("voyage_speed_kn", 3.0)
-        self.maneuver_speed_kn: float = p.get("maneuver_speed_kn", 2.0)
-        self.stationary_speed_kn: float = p.get("stationary_speed_kn", 0.5)
-        self.turn_dcog_threshold: float = p.get("turn_dcog_threshold", 30.0)
-        self.drift_angle_threshold: float = p.get("drift_angle_threshold", 15.0)
-        self.shifting_speed_min_kn: float = p.get("shifting_speed_min_kn", 1.0)
-        self.shifting_speed_max_kn: float = p.get("shifting_speed_max_kn", 5.0)
-        self.anchor_spread_max_m: float = p.get("anchor_spread_max_m", 200.0)
-
-    def classify(self, df: pd.DataFrame) -> pd.DataFrame:
-        df = df.copy()
-        n = len(df)
-        states = np.empty(n, dtype=object)
-        confidences = np.zeros(n)
-
-        sog = df["sog_knots"].values
-        dcog = np.abs(df["dcog_deg"].fillna(0).values)
-        in_port = df["in_port"].values if "in_port" in df.columns else np.zeros(n, dtype=bool)
-        drift_angle = np.abs(df["drift_angle_deg"].fillna(0).values) if "drift_angle_deg" in df.columns else np.zeros(n)
-
-        for i in range(n):
-            s = sog[i]
-            dc = dcog[i]
-            da = drift_angle[i]
-            ip = in_port[i]
-
-            if ip and s < self.stationary_speed_kn:
-                states[i] = "port_stay"
-                confidences[i] = min(95.0, 50 + (self.stationary_speed_kn - s) * 80)
-            elif ip and self.stationary_speed_kn <= s <= self.maneuver_speed_kn:
-                states[i] = "port_maneuver"
-                confidences[i] = 60 + min(30, s * 10)
-            elif s >= self.voyage_speed_kn:
-                if dc > self.turn_dcog_threshold:
-                    states[i] = "turn"
-                    confidences[i] = min(95.0, 50 + dc)
-                else:
-                    states[i] = "voyage"
-                    confidences[i] = min(95.0, 50 + s * 5)
-            elif self.shifting_speed_min_kn <= s <= self.shifting_speed_max_kn and ip:
-                states[i] = "shifting"
-                confidences[i] = 55 + min(35, s * 10)
-            elif s < self.stationary_speed_kn:
-                states[i] = "anchor"
-                confidences[i] = min(90.0, 50 + (self.stationary_speed_kn - s) * 80)
-            elif da > self.drift_angle_threshold:
-                states[i] = "adrift"
-                confidences[i] = min(90.0, 50 + da)
-            else:
-                states[i] = "adrift"
-                confidences[i] = 40.0
-
-        df["predicted_state"] = states
-        df["confidence"] = confidences
-        return df
-
-
 @register_experiment("extended_ais")
 class ExtendedAISExperiment:
-    """Variant B: GPS+AIS with extended states and comparative analysis."""
 
     def __init__(self, config: ProjectConfig) -> None:
         self.config = config
@@ -120,8 +49,13 @@ class ExtendedAISExperiment:
         preprocessor = AISPreprocessor()
         ais_df = preprocessor.process(ais_df)
 
+        teleport_mask = detect_teleports(ais_df, max_speed_knots=self.config.outlier.max_speed_knots)
+        if teleport_mask.any():
+            ais_df = fix_teleports(ais_df, teleport_mask)
+
         ports_df = load_port_database(self.config)
-        matcher = PortMatcher(ports_df, self.config.port)
+        discovered = discover_ports(ais_df)
+        matcher = build_port_matcher(ports_df, discovered, self.config.port)
         port_info = matcher.query_batch(ais_df["LAT"].values, ais_df["LON"].values)
         ais_df = ais_df.join(port_info)
 
@@ -170,7 +104,6 @@ class ExtendedAISExperiment:
         self.logger.info("Extended CSV exported to %s (%d rows)", path, len(output))
 
     def _compare_with_gps(self, ais_df: pd.DataFrame) -> dict:
-        """Compare AIS classification with GPS ground truth on overlapping time range."""
         gps_reports = Path("reports")
 
         best_gps = None
@@ -199,18 +132,8 @@ class ExtendedAISExperiment:
             self.logger.info("No temporal overlap between AIS and GPS data")
             return {}
 
-        state_map_ais_to_basic = {
-            "port_stay": "port_stay",
-            "port_maneuver": "port_stay",
-            "voyage": "voyage",
-            "anchor": "anchor",
-            "adrift": "adrift",
-            "turn": "voyage",
-            "shifting": "port_stay",
-        }
-
         ais_basic = ais_df.copy()
-        ais_basic["basic_state"] = ais_basic["predicted_state"].map(state_map_ais_to_basic)
+        ais_basic["basic_state"] = ais_basic["predicted_state"].map(AIS_TO_BASIC)
 
         gps_state_col = "predicted_state" if "predicted_state" in gps_overlap.columns else None
         if gps_state_col is None:

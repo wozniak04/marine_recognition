@@ -62,7 +62,7 @@ def split_by_episodes(
             train_eps.extend(eps_list[n_test + n_val :])
         elif n == 2:
             train_eps.append(eps_list[0])
-            val_eps.append(eps_list[1])
+            test_eps.append(eps_list[1])
         else:
             train_eps.append(eps_list[0])
 

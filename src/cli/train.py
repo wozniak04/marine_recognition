@@ -22,6 +22,7 @@ def main() -> None:
     # Import experiments to trigger registration
     import src.experiments.classical_ml  # noqa: F401
     import src.experiments.extended_ais  # noqa: F401
+    import src.experiments.hmm_ais_experiment  # noqa: F401
     import src.experiments.hmm_experiment  # noqa: F401
     import src.experiments.lstm_experiment  # noqa: F401
     import src.experiments.rule_based  # noqa: F401
