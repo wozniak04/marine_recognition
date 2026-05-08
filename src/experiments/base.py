@@ -70,7 +70,7 @@ class BaseExperiment(ABC):
     def _load_and_preprocess(self) -> pd.DataFrame:
         df = load_classified_data(self.config)
 
-        preprocessor = DataPreprocessor(self.config.preprocessing)
+        preprocessor = DataPreprocessor(self.config)
         df = preprocessor.process(df)
 
         detector = OutlierDetector(self.config.outlier)
