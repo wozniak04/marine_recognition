@@ -10,3 +10,4 @@ reports/
 results/
 
 *.joblib
+.DS_Store
