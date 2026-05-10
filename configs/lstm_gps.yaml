@@ -42,13 +42,13 @@ model:
     dropout: 0.3
     epochs: 150
     batch_size: 64
-    learning_rate: 0.001
-    patience: 15
+    learning_rate: 0.0001
+    patience: 200
     window_size: 8
     feature_cols:
       - sog_knots
-      - distance_m
-      - rot_deg_s
+      - acceleration_ms2
+      - dcog_deg
 
 training:
   test_size: 0.2

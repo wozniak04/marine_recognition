@@ -1,6 +1,7 @@
 from typing import Any
 import pandas as pd
 import numpy as np
+from sklearn.preprocessing import StandardScaler
 
 from src.experiments.base import BaseExperiment
 from src.experiments.registry import register_experiment
@@ -34,26 +35,47 @@ class HierarchicalExperiment(BaseExperiment):
         # Surowa binarna kolumna oznaczająca port
         is_port = df["In Port"].values == 1 if "In Port" in df.columns else np.zeros(len(df), dtype=bool)
         
+        # Odległości punkt do punktu dla całej trasy (do wyliczenia wskaźnika prostoliniowości)
+        ptp_dists = haversine(lats[:-1], lons[:-1], lats[1:], lons[1:])
+        ptp_dists = np.insert(ptp_dists, 0, 0.0)
+
         X_sequences = []
         is_port_sequence = []
         indices = []
         
         for i in range(len(df) - window_size + 1):
+            w_lats = lats[i : i + window_size]
+            w_lons = lons[i : i + window_size]
+            
             # Dystans między 1 a ostatnim punktem okna (lepsze wykrywanie kotwicy)
             dist_m = haversine(
-                lats[i], lons[i], 
-                lats[i + window_size - 1], lons[i + window_size - 1]
-            )
+                np.array([w_lats[0]]), np.array([w_lons[0]]), 
+                np.array([w_lats[-1]]), np.array([w_lons[-1]])
+            )[0]
             
             time_delta_seconds = (timestamps[i + window_size - 1] - timestamps[i]) / np.timedelta64(1, 's')
             # Obliczamy średnią prędkość w m/s w całym oknie
             window_speed_ms = dist_m / time_delta_seconds if time_delta_seconds > 0 else 0.0
 
+            # Obliczamy maksymalny rozrzut od środka okna (spread) - specyficzne dla anchor vs adrift
+            c_lat, c_lon = w_lats.mean(), w_lons.mean()
+            dists_to_center = haversine(w_lats, w_lons, np.full(window_size, c_lat), np.full(window_size, c_lon))
+            spread_m = dists_to_center.max()
             
-            # Konstruowanie sekwencji: [prędkość, kąt_skrętu, dystans_okna]
+            # Straightness (efficiency) okna: czy statek płynie prosto (Voyage) czy meandruje (Adrift)
+            path_dist = np.sum(ptp_dists[i+1 : i+window_size])
+            efficiency = dist_m / path_dist if path_dist > 0 else 0.0
+
+            # Suma bezwzględnych zmian kursu w oknie (odróżnia stabilny rejs od chaotycznego dryfowania)
+            window_turn_sum = np.sum(np.abs(dcog[i : i + window_size]))
+
+            # Indeks kształtu: odróżnia ruch w linii (voyage/drift) od kręcenia się wokół punktu (anchor)
+            shape_index = dist_m / (spread_m + 1.0)
+
+            # Konstruowanie sekwencji: [prędkość, kąt_skrętu, średnia_prędk, spread_m, dystans, prostoliniowość, suma_skrętów, indeks_kształtu]
             seq = []
             for j in range(window_size):
-                seq.append([sog[i+j], dcog[i+j], window_speed_ms])
+                seq.append([sog[i+j], dcog[i+j], window_speed_ms, spread_m, dist_m, efficiency, window_turn_sum, shape_index])
                 
             X_sequences.append(seq)
             
@@ -83,14 +105,23 @@ class HierarchicalExperiment(BaseExperiment):
         # --- NOWE: Wyliczanie wag klas (balansowanie z powodu małej ilości adrift) ---
         counts = np.bincount(y_sea, minlength=3)
         counts = np.maximum(counts, 1)  # unikamy dzielenia przez 0
-        weights = 1.0 / counts
+        # Zmniejszamy siłę wag dla rzadkich klas (używamy potęgi 0.25 zamiast 0.5).
+        # Sieć wykrywa dryf świetnie (92% recall), ale czasami nadużywa go przy kotwicy.
+        # Mniejsza waga uciszy "panikę" sieci i zauważalnie podniesie Precyzję klasy adrift.
+        weights = 1.0 / np.power(counts, 0.25)
         weights = (weights / np.sum(weights)) * 3.0  # normalizujemy do ilości klas
         # -----------------------------------------------------------------------------
         
-        sea_model = SimpleSeaModelWrapper(epochs=15, class_weights=weights)
+        epochs = self.config.model.params.get("epochs", 25)
+        sea_model = SimpleSeaModelWrapper(epochs=epochs, class_weights=weights)
+        
+        # NOWE: Standaryzacja cech! Sieć LSTM potrzebuje znormalizowanych danych (mean=0, std=1)
+        scaler = StandardScaler()
         if len(X_sea) > 0:
+            N, W, F = X_sea.shape
+            X_sea_scaled = scaler.fit_transform(X_sea.reshape(-1, F)).reshape(N, W, F)
             self.logger.info(f"Trenowanie modelu morskiego na {len(X_sea)} oknach.")
-            sea_model.fit(X_sea, y_sea)
+            sea_model.fit(X_sea_scaled, y_sea)
             
         # ==========================================
         # 3. Trening modelu dla manewrów PORTOWYCH
@@ -106,11 +137,12 @@ class HierarchicalExperiment(BaseExperiment):
             self.logger.info(f"Trenowanie modelu portowego na {len(X_port)} oknach.")
             port_model.fit(X_port, y_port)
             
-        return {"sea_model": sea_model, "port_model": port_model}
+        return {"sea_model": sea_model, "port_model": port_model, "scaler": scaler}
 
     def predict(self, trained: Any, df: pd.DataFrame) -> pd.DataFrame:
         sea_model = trained["sea_model"]
         port_model = trained["port_model"]
+        scaler = trained.get("scaler")
         
         # Preprocesing (Rozdzielacz)
         X_seq, is_port_seq, idxs = self._build_features_and_route(df)
@@ -129,7 +161,11 @@ class HierarchicalExperiment(BaseExperiment):
         # 2. Trasa do sieci Morskiej
         if (~is_port_seq).any():
             # Teraz predict zwraca (predykcje, pewności)
-            sea_preds, sea_confs = sea_model.predict(X_seq[~is_port_seq])
+            X_sea = X_seq[~is_port_seq]
+            if scaler is not None and len(X_sea) > 0:
+                N, W, F = X_sea.shape
+                X_sea = scaler.transform(X_sea.reshape(-1, F)).reshape(N, W, F)
+            sea_preds, sea_confs = sea_model.predict(X_sea)
             
             SEA_STATE_MAP = {0: "anchor", 1: "adrift", 2: "voyage"}
             pred_strings = [SEA_STATE_MAP.get(p, "adrift") for p in sea_preds]

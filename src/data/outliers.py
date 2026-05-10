@@ -57,7 +57,7 @@ class OutlierDetector:
 
     def _acceleration_outlier(self, series: pd.Series) -> pd.Series:
         abs_acc = series.abs()
-        threshold = abs_acc.quantile(0.999)
+        threshold = 0.1
         mask = (abs_acc > threshold) & series.notna()
         logger.info("Acceleration outlier check: %d flagged (threshold=%.4f m/s²)", mask.sum(), threshold)
         return mask

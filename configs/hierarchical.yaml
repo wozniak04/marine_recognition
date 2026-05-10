@@ -20,8 +20,8 @@ outlier:
 model:
   name: hierarchical_lstm 
   params:
-    window_size: 5
-    epochs: 15
+    window_size: 30
+    epochs: 25
 
 training:
   test_size: 0.2
