@@ -1,0 +1,22 @@
+[project]
+name = "marine-recognition"
+version = "1.0.0"
+description = "Ship maneuver detection from GPS data"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pandas>=2.2",
+    "numpy>=2.0",
+    "scikit-learn>=1.5",
+    "geopy>=2.4",
+    "pyyaml>=6.0",
+    "matplotlib>=3.9",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]

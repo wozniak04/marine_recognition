@@ -1,0 +1,70 @@
+experiment_name: rule_v1
+random_seed: 42
+
+paths:
+  raw_dir: data/raw
+  ports_dir: data/ports
+  preprocessed_dir: data/preprocessed
+  models_dir: models
+  reports_dir: reports
+
+data:
+  input_files:
+    - Ship_Operation_example_dataset_classified.csv
+    - Ship_Operation_example_dataset_classified_2.csv
+
+preprocessing:
+  rolling_window: 100
+
+port:
+  radius_meters: 16000.0
+
+# Reguly klasyfikacji — sprawdzane po kolei, pierwsza pasujaca wygrywa.
+# Dostepne cechy z preprocessingu:
+#   rolling_sog_kn, rolling_sog_std, rolling_spread_m,
+#   rolling_net_displacement_m, rolling_accel_abs, rolling_rot_abs,
+#   rolling_cog_std, sog_knots, acceleration, rot, cog
+#
+# Warunki: min, max, min_ratio (wartosc wzgledem innej kolumny)
+# Zeby dodac nowa regule — dopisz wpis ponizej.
+model:
+  name: rule_based
+  min_episode_minutes: 50
+  rules:
+    # 1. Voyage: wysoka srednia predkosc
+    - state: voyage
+      confidence: 85
+      conditions:
+        rolling_sog_kn: {min: 3.0}
+
+    # 2. Adrift: niska predkosc, duzy spread, statek znoszony w jednym kierunku
+    - state: adrift
+      confidence: 70
+      conditions:
+        rolling_sog_kn: {min: 0.3, max: 3.0}
+        rolling_spread_m: {min: 200.0}
+        rolling_net_displacement_m:
+          min_ratio: {of: rolling_spread_m, value: 0.3}
+
+    # 3. Anchor: niska predkosc, sredni spread
+    - state: anchor
+      confidence: 70
+      conditions:
+        rolling_sog_kn: {max: 0.5}
+        rolling_spread_m: {max: 200.0}
+
+    # 4. Anchor fallback: sredni spread
+    - state: anchor
+      confidence: 40
+      conditions:
+        rolling_spread_m: {max: 200.0}
+
+    # 7. Default: duzy spread = adrift
+    - state: adrift
+      confidence: 35
+      conditions: {}
+
+training:
+  test_size: 0.2
+  validation_size: 0.15
+  oversampling_max_ratio: 3

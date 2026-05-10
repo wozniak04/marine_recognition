@@ -1,0 +1,43 @@
+experiment_name: tree_v1
+random_seed: 42
+
+paths:
+  raw_dir: data/raw
+  ports_dir: data/ports
+  preprocessed_dir: data/preprocessed
+  models_dir: models
+  reports_dir: reports
+
+data:
+  input_files:
+    - Ship_Operation_example_dataset_classified.csv
+    - Ship_Operation_example_dataset_classified_2.csv
+
+preprocessing:
+  rolling_window: 45
+
+port:
+  radius_meters: 4000.0
+
+model:
+  name: decision_tree
+  min_episode_minutes: 50
+  max_depth: null
+  min_samples_leaf: 5
+  feature_cols:
+    - sog_knots
+    - cog
+    - acceleration
+    - rot
+    # - rolling_sog_kn
+    # - rolling_sog_std
+    # - rolling_spread_m
+    # - rolling_net_displacement_m
+    # - rolling_accel_abs
+    # - rolling_rot_abs
+    # - rolling_cog_std
+
+training:
+  test_size: 0.2
+  validation_size: 0.15
+  oversampling_max_ratio: 3
