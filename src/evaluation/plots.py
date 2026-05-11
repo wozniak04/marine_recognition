@@ -45,6 +45,7 @@ def plot_confusion_matrix(metrics: dict, split_name: str, output_dir: Path) -> N
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / f"confusion_matrix_{split_name}.png"
     fig.savefig(path, dpi=150)
+    plt.show()
     plt.close(fig)
     print(f"  Plot saved: {path}")
 

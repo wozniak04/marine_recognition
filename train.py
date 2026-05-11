@@ -67,7 +67,7 @@ def main() -> None:
     df["state"] = df["operation_id"].map(OPERATION_ID_TO_STATE)
 
     ports_dir = Path(cfg.paths.ports_dir)
-    port_radius = cfg.port.get("radius_meters", 5000.0)
+    port_radius = cfg.port.get("radius_meters", 3000.0)
     if ports_dir.exists():
         print("Matching ports...")
         matcher = load_port_matcher(str(ports_dir), port_radius)

@@ -17,7 +17,7 @@ preprocessing:
   rolling_window: 100
 
 port:
-  radius_meters: 16000.0
+  radius_meters: 3000.0
 
 # Reguly klasyfikacji — sprawdzane po kolei, pierwsza pasujaca wygrywa.
 # Dostepne cechy z preprocessingu:
