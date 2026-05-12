@@ -31,6 +31,23 @@ model:
   name: rule_based
   min_episode_minutes: 50
   rules:
+    # # 1. Voyage: bardzo wysoka predkosc
+    # - state: voyage
+    #   confidence: 100
+    #   conditions:
+    #     sog_knots: {min: 8.0}
+    # - state: adrift
+    #   confidence: 100
+    #   conditions:
+    #     sog_knots: {min: 2, max: 4}
+    #     acceleration: {min: -0.004, max: 0.008}
+    # - state: voyage
+    #   confidence: 100
+    #   conditions: 
+    #     sog_knots: {min: 3.0}
+
+
+
     # 1. Voyage: wysoka srednia predkosc
     - state: voyage
       confidence: 85

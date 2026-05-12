@@ -26,15 +26,15 @@ model:
   min_samples_leaf: 5
   feature_cols:
     - sog_knots
-    - cog
+    # - cog
     - acceleration
     - rot
-    # - rolling_sog_kn
-    # - rolling_sog_std
-    # - rolling_spread_m
-    # - rolling_net_displacement_m
-    # - rolling_accel_abs
-    # - rolling_rot_abs
+    - rolling_sog_kn
+    - rolling_sog_std
+    - rolling_spread_m
+    - rolling_net_displacement_m
+    - rolling_accel_abs
+    - rolling_rot_abs
     # - rolling_cog_std
 
 training:

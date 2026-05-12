@@ -10,7 +10,7 @@ import numpy as np
 CLASS_NAMES = ["port_stay", "voyage", "anchor", "adrift"]
 
 
-def plot_confusion_matrix(metrics: dict, split_name: str, output_dir: Path) -> None:
+def plot_confusion_matrix(metrics: dict, split_name: str, output_dir: Path, suffix: str = "") -> None:
     cm_dict = metrics.get("confusion_matrix", {})
     if not cm_dict:
         return
@@ -43,13 +43,13 @@ def plot_confusion_matrix(metrics: dict, split_name: str, output_dir: Path) -> N
     fig.tight_layout()
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    path = output_dir / f"confusion_matrix_{split_name}.png"
+    path = output_dir / f"confusion_matrix_{split_name}{suffix}.png"
     fig.savefig(path, dpi=150)
     plt.show()
     plt.close(fig)
     print(f"  Plot saved: {path}")
 
 
-def plot_all_splits(results: dict, output_dir: Path) -> None:
+def plot_all_splits(results: dict, output_dir: Path, suffix: str = "") -> None:
     for split_name, metrics in results.items():
-        plot_confusion_matrix(metrics, split_name, output_dir)
+        plot_confusion_matrix(metrics, split_name, output_dir, suffix)

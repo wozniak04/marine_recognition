@@ -95,27 +95,37 @@ def main() -> None:
     if isinstance(classifier, TreeClassifier):
         classifier.fit(splits["train"])
 
-    results = {}
+    results_model = {}
+    results_pipeline = {}
     for split_name, split_df in splits.items():
         predicted = classifier.classify(split_df)
+
+        model_true = predicted["state"].values.copy()
+        model_true[model_true == "port_stay"] = "anchor"
+        model_metrics = compute_all_metrics(model_true, predicted["predicted_state"].values)
+        results_model[split_name] = model_metrics
+
         if "in_port" in predicted.columns:
             port_mask = (predicted["in_port"].values == 1) & (predicted["predicted_state"].isin(["anchor", "adrift"]))
             predicted.loc[port_mask, "predicted_state"] = "port_stay"
             predicted.loc[port_mask, "confidence"] = 100.0
-        metrics = compute_all_metrics(
+        pipeline_metrics = compute_all_metrics(
             predicted["state"].values, predicted["predicted_state"].values
         )
-        results[split_name] = metrics
-        print_metrics(metrics, split_name)
+        results_pipeline[split_name] = pipeline_metrics
+
+        print_metrics(model_metrics, f"{split_name} model")
+        print_metrics(pipeline_metrics, f"{split_name} pipeline")
 
     model_dir = Path(cfg.paths.models_dir) / cfg.experiment_name
     classifier.save(model_dir)
 
     reports_dir = Path(cfg.paths.reports_dir) / cfg.experiment_name
-    save_metrics(results, reports_dir / "metrics.json")
+    save_metrics({"model": results_model, "pipeline": results_pipeline}, reports_dir / "metrics.json")
 
     print("\nGenerating confusion matrix plots...")
-    plot_all_splits(results, reports_dir)
+    plot_all_splits(results_model, reports_dir, suffix="_model")
+    plot_all_splits(results_pipeline, reports_dir, suffix="_pipeline")
 
     test_predicted = classifier.classify(splits["test"])
     if "in_port" in test_predicted.columns:
