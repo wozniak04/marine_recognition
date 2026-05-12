@@ -219,4 +219,8 @@ __marimo__/
 
 # data
 data/processed/*
+data/raw/classified/*
+data/raw/unclassified/*
 visualization/*
+
+Map/public/data/*
