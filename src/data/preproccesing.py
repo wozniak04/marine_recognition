@@ -15,11 +15,13 @@ class DataPreprocessor:
         drift_threshold: int = 0.51444,
         max_speed_m_s: int = 12.86, 
         max_acc_m_s2: int = 0.05,
+        max_jump_m: int = 2000,
         ):              
         self.drop_prev = drop_prev
         self.drift_threshold = drift_threshold
         self.max_speed_m_s = max_speed_m_s
         self.max_acc_m_s2 = max_acc_m_s2
+        self.max_jump_m = max_jump_m
 
         # Logger 
         self.logger = create_logger(self.__class__.__name__)
@@ -40,7 +42,10 @@ class DataPreprocessor:
     # ============ DATA CLEANING ============
     
     def _fill_first_lines_nans(self, frame: pd.DataFrame) -> pd.DataFrame:
-        frame.iloc[0:2] = frame.iloc[0:2].fillna(0.0)
+        numerical_cols = frame.select_dtypes(include=["number"]).columns
+        cols_idx = frame.columns.get_indexer(numerical_cols)
+        
+        frame.iloc[0:2, cols_idx] = frame.iloc[0:2, cols_idx].fillna(0.0)
         
         return frame
     
@@ -52,6 +57,7 @@ class DataPreprocessor:
         self.logger.info("============ Wyszukiwanie outlier'ów z GPS ============")
         
         frame["is_outlier"] = 0
+        frame["why_outlier"] = pd.Series(dtype="string")
         
         # Sort
         frame = frame.sort_values(["signaldate"])
@@ -60,18 +66,21 @@ class DataPreprocessor:
         nan_mask = frame["LAT"].isna() | frame["LON"].isna()
         nan_sum = nan_mask.sum()
         frame.loc[nan_mask, "is_outlier"] = 1
+        frame.loc[nan_mask, "why_outlier"] = "gps_nan"
         self.logger.info(f"Nowych outlier'ów, przez braki danych GPS (NaN): {nan_sum}")
         
         # Drop invalid GPS 
         range_mask = frame["LAT"].between(-90, 90) & frame["LON"].between(-180, 180)
         wrong_range_sum = (~range_mask & (frame["is_outlier"] == 0)).sum()
         frame.loc[~range_mask, "is_outlier"] = 1
+        frame.loc[~range_mask, "why_outlier"] = "gps_out_of_range"
         self.logger.info(f"Nowych outlier'ów, przez GPS poza zakresem (-90, 90) ; (-180, 180): {wrong_range_sum}")
         
         # Point (0, 0)
         zero_point_mask = (frame["LAT"] == 0) & (frame["LON"] == 0)
         zero_point_sum = (zero_point_mask & (frame["is_outlier"] == 0)).sum()
         frame.loc[zero_point_mask, "is_outlier"] = 1
+        frame.loc[zero_point_mask, "why_outlier"] = "null_island"
         self.logger.info(f"[Info]: Nowych outlier'ów, przez rekordy w punkcie (0, 0): {zero_point_sum}")
         
         # Duplicates
@@ -79,12 +88,14 @@ class DataPreprocessor:
         dupe_mask = frame.duplicated(subset=["signaldate"], keep="first")
         dupe_sum = (dupe_mask & (frame["is_outlier"] == 0)).sum()
         frame.loc[dupe_mask, "is_outlier"] = 1
+        frame.loc[dupe_mask, "why_outlier"] = "date_duplicate"
         self.logger.info(f"Nowych outlier'ów, przez duplikaty dat: {dupe_sum}")
         
         # GPS freeze
         freeze_mask = (frame["LAT"] == frame["LAT"].shift(1)) & (frame["LON"] == frame["LON"].shift(1))
         freeze_sum = (freeze_mask & (frame["is_outlier"] == 0)).sum()
         frame.loc[freeze_mask, "is_outlier"] = 1
+        frame.loc[freeze_mask, "why_outlier"] = "gps_freeze"
         self.logger.info(f"Nowych outlier'ów, przez GPS freeze: {freeze_sum}")
         
         # Summary
@@ -100,11 +111,43 @@ class DataPreprocessor:
         """
         self.logger.info("============ Kinematyka ============")
         
+        iterations = 0
+        # while True:
+        #     frame = self._add_prev_values(frame)
+        #     print(frame)
+        #     frame = self._calculate_distance_dtime(frame)
+        #     frame = self._calculate_velocity(frame)
+            
+        #     outliers_before = (frame["is_outlier"] == 1).sum()
+            
+        #     frame = self._mark_teleportation(frame)
+        #     frame = self._mark_unnatural_velocity(frame)
+            
+        #     outliers_after = (frame["is_outlier"] == 1).sum()
+            
+        #     if outliers_before == outliers_after:
+        #         self.logger.info(f"Outlier'ów na podstawie prędkości: {outliers_after}. Wykonano {iterations} iteracji.")
+        #         break
+                
+        #     iterations += 1
+            
+        #     cols_to_drop = [
+        #         "traveled", "dt", "prev_LAT", "prev_LON",
+        #         "prev_signaldate", "velocity_m_s", "velocity_knot"
+        #     ]
+        #     # outlier_mask = frame["is_outlier"] == False
+        #     # frame = frame[~test].drop(columns=[c for c in cols_to_drop if c in frame])
+        #     # frame.loc[outlier_mask, cols_to_drop] = None
+
         frame = self._add_prev_values(frame)
         frame = self._calculate_distance_dtime(frame)
+        
+        # frame = self._mark_teleportation(frame)
+        
         frame = self._calculate_velocity(frame)
-        frame = self._calculate_COG(frame)
+        
         frame = self._mark_unnatural_velocity(frame)
+        frame = self._calculate_COG(frame)
         frame = self._mark_drift(frame)
         frame = self._calculace_kinematics_params(frame)
         frame = self._mark_unnatural_acceleration(frame)
@@ -153,8 +196,6 @@ class DataPreprocessor:
     def _calculate_distance_dtime(self, frame: pd.DataFrame) -> pd.DataFrame:        
         mask = frame["is_outlier"] == 0
 
-        frame["COG"] = np.nan 
-
         frame.loc[mask, "traveled"] = calc_traveled_distance(
             frame.loc[mask, "prev_LAT"].values,
             frame.loc[mask, "prev_LON"].values,
@@ -168,6 +209,8 @@ class DataPreprocessor:
     
     # Calculate COG
     def _calculate_COG(self, frame: pd.DataFrame) -> pd.DataFrame:
+        frame["COG"] = np.nan 
+        
         mask = frame["is_outlier"] == 0
         frame.loc[mask, "COG"] = calc_course(
             frame.loc[mask, "prev_LAT"].values,
@@ -190,9 +233,6 @@ class DataPreprocessor:
     # ============ CLEANUP (if drop_prev=True) ============
     def _drop_helper_columns(self, frame: pd.DataFrame) -> pd.DataFrame:
         cols_to_drop = [
-            "prev_LAT",
-            "prev_LON",
-            "prev_signaldate",
             "prev_velocity_m_s",
             "prev_COG"
         ]        
@@ -224,7 +264,9 @@ class DataPreprocessor:
         
         unnatural_mask = frame["velocity_m_s"] > self.max_speed_m_s
         unnatural_sum = (unnatural_mask & mask).sum()
+        
         frame.loc[unnatural_mask & mask, "is_outlier"] = 1
+        frame.loc[unnatural_mask & mask, "why_outlier"] = "velocity"
         
         self.logger.info(f"Statki z nienaturalną prędkością: {unnatural_sum}")
         
@@ -237,17 +279,71 @@ class DataPreprocessor:
         mask = frame["is_outlier"] == 0
         unnatural_mask = (frame["acc"] > self.max_acc_m_s2) | (frame["acc"] < -self.max_acc_m_s2)
         unnatural_sum = (unnatural_mask & mask).sum()
+        
         frame.loc[unnatural_mask & mask, "is_outlier"] = 1
+        frame.loc[unnatural_mask & mask, "why_outlier"] = "acc"
         
         self.logger.info(f"Statki z nienaturalnym przyspieszeniem: {unnatural_sum}")
         
         return frame
+    
+    # def _mark_teleportation(self, frame: pd.DataFrame) -> pd.DataFrame:
+    #     """
+    #     Detects position teleportation
+    #     """
+        
+    #     lat = frame["LAT"].values
+    #     lon = frame["LON"].values
+    #     plat = frame["prev_LAT"].values
+    #     plon = frame["prev_LON"].values
+    #     dt = frame["dt"].values
+        
+    #     n = len(frame)
+    #     is_teleport = np.zeros(n, dtype=bool)
+        
+            
+    #     anomaly = False
+    #     for i in range(1, n):
+    #         traveled = calc_traveled_distance(
+    #             plat[i], plon[i], lat[i], lon[i]
+    #         )
+    #         max_traveled = self.max_speed_m_s * dt[i]
+            
+    #         teleport_detected = (traveled > self.max_jump_m and dt[i] < 120) or (traveled > max_traveled) or np.isnan(lat[i]) or np.isnan(lon[i])
+            
+    #         if teleport_detected:
+    #             if not anomaly:
+    #                 anomaly = True
+    #                 is_teleport[i] = True
+    #             else:
+    #                 anomaly = False
+    #         else:
+    #             if anomaly:
+    #                 is_teleport[i] = True
+            
+    #     teleport_sum = is_teleport.sum()
+    #     self.logger.info(f"Wykryto {teleport_sum} statków z teleportacją.")
+        
+    #     frame.loc[is_teleport, "is_outlier"] = 1
+    #     frame.loc[is_teleport, "why_outlier"] = "teleport"
+        
+    #     # cols_to_drop = ["prev_LAT", "prev_LON", "traveled", "dt", "prev_signaldate"]
+        
+    #     # frame = frame.drop(columns=[c for c in cols_to_drop if c in frame.columns])
+        
+    #     return frame
         
     # ============ SEGMENT DATA ============
     def _segment_data(self, frame: pd.DataFrame) -> pd.DataFrame:
         mask = frame["is_outlier"] == 0
         
-        first_valid_idx = frame.index[mask][0]
+        valid_indices = frame.index[mask]
+        if len(valid_indices) == 0:
+            frame["is_first_in_segment"] = 0
+            frame["segment_id"] = -1
+            return frame
+
+        first_valid_idx = valid_indices[0]
         is_new_segment = mask & ((frame["dt"] > 300) | (frame.index == first_valid_idx))
 
         cols_to_zero = ["velocity_m_s", "velocity_knot", "dVelocity_m_s", "dCOG", "acc"]

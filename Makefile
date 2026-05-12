@@ -8,3 +8,6 @@ preprocess2:
 
 exp:
 	uv run -m src.cli.exp
+
+mapa:
+	python3 -m streamlit run map.py
