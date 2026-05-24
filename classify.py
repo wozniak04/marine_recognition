@@ -18,7 +18,7 @@ from src.config import Config
 from src.data.ports import load_port_matcher
 from src.data.preprocessing import preprocess
 from src.models.decision_tree import TreeClassifier
-from src.models.rule_based import RuleClassifier
+from src.models.rule_based import PORT_STATES, RuleClassifier, apply_port_transitions
 
 
 def parse_args() -> argparse.Namespace:
@@ -36,16 +36,21 @@ def load_classifier(model_dir: Path):
 
 
 def build_output(df: pd.DataFrame) -> pd.DataFrame:
+    ps = df["predicted_state"]
     output = pd.DataFrame(
         {
             "signaldate": df["signaldate"],
             "LAT": df["LAT"],
             "LON": df["LON"],
             "Outlier GPS": df["outlier_gps"] if "outlier_gps" in df.columns else 0,
-            "In Port": (df["predicted_state"] == "port_stay").astype(int),
-            "At Sea Voyage": (df["predicted_state"] == "voyage").astype(int),
-            "At Sea Anchor": (df["predicted_state"] == "anchor").astype(int),
-            "At Sea Adrift GPS": (df["predicted_state"] == "adrift").astype(int),
+            "In Port": ps.isin(PORT_STATES).astype(int),
+            "In Port Shifting": (ps == "in_port_shifting").astype(int),
+            "In Port Departure": (ps == "in_port_departure").astype(int),
+            "In Port Arrival": (ps == "in_port_arrival").astype(int),
+            "At Sea Voyage": (ps == "voyage").astype(int),
+            "At Sea Turn": (ps == "at_sea_turn").astype(int),
+            "At Sea Anchor": (ps == "anchor").astype(int),
+            "At Sea Adrift GPS": (ps == "adrift").astype(int),
             "Confidence Rate": df["confidence"].round(1),
         }
     )
@@ -68,12 +73,13 @@ def _compute_port_locodes(df: pd.DataFrame) -> tuple[list, list]:
     if locodes is None:
         return departure, destination
 
+    sea_moving = {"voyage", "at_sea_turn"}
     voyage_segments = []
     i = 0
     while i < n:
-        if states[i] == "voyage":
+        if states[i] in sea_moving:
             start = i
-            while i < n and states[i] == "voyage":
+            while i < n and states[i] in sea_moving:
                 i += 1
             voyage_segments.append((start, i))
         else:
@@ -82,12 +88,12 @@ def _compute_port_locodes(df: pd.DataFrame) -> tuple[list, list]:
     for seg_start, seg_end in voyage_segments:
         dep_locode = None
         for j in range(seg_start - 1, -1, -1):
-            if states[j] == "port_stay" and pd.notna(locodes.iloc[j]):
+            if states[j] in PORT_STATES and pd.notna(locodes.iloc[j]):
                 dep_locode = locodes.iloc[j]
                 break
         dest_locode = None
         for j in range(seg_end, n):
-            if states[j] == "port_stay" and pd.notna(locodes.iloc[j]):
+            if states[j] in PORT_STATES and pd.notna(locodes.iloc[j]):
                 dest_locode = locodes.iloc[j]
                 break
         for j in range(seg_start, seg_end):
@@ -128,10 +134,11 @@ def main() -> None:
     print("Classifying...")
     df = classifier.classify(df)
 
-    if "in_port" in df.columns:
-        port_mask = (df["in_port"].values == 1) & (df["predicted_state"].isin(["anchor", "adrift"]))
-        df.loc[port_mask, "predicted_state"] = "port_stay"
-        df.loc[port_mask, "confidence"] = 100.0
+    if not isinstance(classifier, RuleClassifier):
+        turn_mask = (df["predicted_state"] == "voyage") & (df["rot"].abs() > 2.5)
+        df.loc[turn_mask, "predicted_state"] = "at_sea_turn"
+
+    df = apply_port_transitions(df)
 
     output = build_output(df)
 

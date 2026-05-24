@@ -8,7 +8,10 @@ import numpy as np
 import pandas as pd
 
 
-CLASS_NAMES = ["port_stay", "voyage", "anchor", "adrift"]
+CLASS_NAMES = [
+    "in_port", "in_port_shifting", "in_port_arrival", "in_port_departure",
+    "voyage", "at_sea_turn", "anchor", "adrift",
+]
 
 
 def compute_all_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict:

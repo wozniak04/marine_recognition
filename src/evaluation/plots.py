@@ -7,7 +7,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-CLASS_NAMES = ["port_stay", "voyage", "anchor", "adrift"]
+CLASS_NAMES = [
+    "in_port", "in_port_shifting", "in_port_arrival", "in_port_departure",
+    "voyage", "at_sea_turn", "anchor", "adrift",
+]
 
 
 def plot_confusion_matrix(metrics: dict, split_name: str, output_dir: Path, suffix: str = "") -> None:
