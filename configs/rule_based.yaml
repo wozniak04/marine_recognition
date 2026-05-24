@@ -20,6 +20,7 @@ preprocessing:
 
 port:
   radius_meters: 16000.0
+  shifting_sog_kn: 0.5
 
 # Reguly klasyfikacji — sprawdzane po kolei, pierwsza pasujaca wygrywa.
 # Dostepne cechy z preprocessingu:
@@ -27,19 +28,43 @@ port:
 #   rolling_net_displacement_m, rolling_accel_abs, rolling_rot_abs,
 #   rolling_cog_std, sog_knots, acceleration, rot, cog
 #
-# Warunki: min, max, min_ratio (wartosc wzgledem innej kolumny)
-# Zeby dodac nowa regule — dopisz wpis ponizej.
+# Warunki: min, max, abs_min (|wartosc| >= X), abs_max, min_ratio
+#
+# Klasy portowe (in_port, in_port_shifting, in_port_arrival, in_port_departure)
+# sa przypisywane automatycznie w postprocessingu na podstawie in_port z bazy portow.
 model:
   name: rule_based
   min_episode_minutes: 50
   rules:
-    # 1. Voyage: wysoka srednia predkosc
+    # 1. At Sea Turn: predkosc voyage + wysoki rot (skret na morzu)
+    - state: at_sea_turn
+      confidence: 80
+      conditions:
+        rolling_sog_kn: {min: 3.0}
+        rot: {abs_min: 2.5}
+
+    # 2. Voyage: wysoka srednia predkosc
     - state: voyage
       confidence: 85
       conditions:
         rolling_sog_kn: {min: 3.0}
 
-    # 2. Adrift: niska predkosc, duzy spread, statek znoszony w jednym kierunku
+    # 3. In Port: prawie zerowy ruch — zacumowany przy nabrzezu
+    - state: in_port
+      confidence: 85
+      conditions:
+        rolling_sog_kn: {max: 0.1}
+        rolling_spread_m: {max: 20.0}
+
+    # 4. In Port Shifting: powolny celowy ruch w ograniczonym obszarze (miedzy nabrzezami)
+    - state: in_port_shifting
+      confidence: 75
+      conditions:
+        rolling_sog_kn: {min: 0.1, max: 2.0}
+        rolling_spread_m: {max: 500.0}
+        rolling_net_displacement_m: {min: 30.0}
+
+    # 5. Adrift: niska predkosc, duzy spread, statek znoszony w jednym kierunku
     - state: adrift
       confidence: 70
       conditions:
@@ -48,20 +73,20 @@ model:
         rolling_net_displacement_m:
           min_ratio: {of: rolling_spread_m, value: 0.3}
 
-    # 3. Anchor: niska predkosc, sredni spread
+    # 6. Anchor: niska predkosc, sredni spread
     - state: anchor
       confidence: 70
       conditions:
         rolling_sog_kn: {max: 0.5}
         rolling_spread_m: {max: 200.0}
 
-    # 4. Anchor fallback: sredni spread
+    # 7. Anchor fallback: sredni spread
     - state: anchor
       confidence: 40
       conditions:
         rolling_spread_m: {max: 200.0}
 
-    # 7. Default: duzy spread = adrift
+    # 8. Default: duzy spread = adrift
     - state: adrift
       confidence: 35
       conditions: {}

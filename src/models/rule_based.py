@@ -12,15 +12,37 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-ALL_STATES = ["port_stay", "voyage", "anchor", "adrift"]
+ALL_STATES = [
+    "in_port", "in_port_shifting", "in_port_arrival", "in_port_departure",
+    "voyage", "at_sea_turn", "anchor", "adrift",
+]
 
 OPERATION_ID_TO_STATE = {1: "port_stay", 2: "anchor", 3: "adrift", 4: "voyage"}
 
 DEFAULT_RULES = [
     {
+        "state": "at_sea_turn",
+        "confidence": 80,
+        "conditions": {"rolling_sog_kn": {"min": 3.0}, "rot": {"abs_min": 2.5}},
+    },
+    {
         "state": "voyage",
         "confidence": 85,
         "conditions": {"rolling_sog_kn": {"min": 3.0}},
+    },
+    {
+        "state": "in_port",
+        "confidence": 85,
+        "conditions": {"rolling_sog_kn": {"max": 0.1}, "rolling_spread_m": {"max": 20.0}},
+    },
+    {
+        "state": "in_port_shifting",
+        "confidence": 75,
+        "conditions": {
+            "rolling_sog_kn": {"min": 0.1, "max": 2.0},
+            "rolling_spread_m": {"max": 500.0},
+            "rolling_net_displacement_m": {"min": 30.0},
+        },
     },
     {
         "state": "adrift",
@@ -105,6 +127,10 @@ class RuleClassifier:
                     return False
                 if "max" in constraint and val > constraint["max"]:
                     return False
+                if "abs_min" in constraint and abs(val) < constraint["abs_min"]:
+                    return False
+                if "abs_max" in constraint and abs(val) > constraint["abs_max"]:
+                    return False
                 if "min_ratio" in constraint:
                     ratio_cfg = constraint["min_ratio"]
                     ref_col = ratio_cfg["of"]
@@ -163,3 +189,41 @@ class RuleClassifier:
         if "rules" in data:
             return cls(rules=data["rules"], min_episode_minutes=data.get("min_episode_minutes", 50))
         return cls(min_episode_minutes=data.get("min_episode_minutes", 50))
+
+
+PORT_STATES = {"in_port", "in_port_shifting", "in_port_arrival", "in_port_departure"}
+SEA_MOVING_STATES = {"voyage", "at_sea_turn"}
+
+
+def apply_port_transitions(df: pd.DataFrame) -> pd.DataFrame:
+    """Mark in_port_arrival / in_port_departure based on state transitions.
+
+    Scans predicted_state for boundaries between port states and sea states.
+    First port point after sea = arrival, last port point before sea = departure.
+    """
+    df = df.copy()
+    states = df["predicted_state"].values.copy()
+    n = len(df)
+
+    i = 0
+    while i < n:
+        if states[i] not in ("in_port", "in_port_shifting"):
+            i += 1
+            continue
+
+        seg_start = i
+        while i < n and states[i] in ("in_port", "in_port_shifting"):
+            i += 1
+        seg_end = i
+
+        has_sea_before = seg_start > 0 and states[seg_start - 1] not in PORT_STATES
+        has_sea_after = seg_end < n and states[seg_end] not in PORT_STATES
+
+        if has_sea_before:
+            states[seg_start] = "in_port_arrival"
+
+        if has_sea_after and (seg_end - 1) != seg_start or not has_sea_before:
+            states[seg_end - 1] = "in_port_departure"
+
+    df["predicted_state"] = states
+    return df
