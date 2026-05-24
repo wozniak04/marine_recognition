@@ -10,11 +10,13 @@ paths:
 
 data:
   input_files:
-    - Ship_Operation_example_dataset_classified.csv
-    - Ship_Operation_example_dataset_classified_2.csv
+    # - Ship_Operation_example_dataset_classified.csv
+    # - Ship_Operation_example_dataset_classified_2.csv
+    - Ship_Operation_example_dataset_unclassified_source_GPS_2.csv
 
 preprocessing:
   rolling_window: 100
+  reverse: True
 
 port:
   radius_meters: 16000.0

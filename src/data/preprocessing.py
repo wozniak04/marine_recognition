@@ -43,7 +43,7 @@ def haversine(
     return 2 * EARTH_RADIUS_M * np.arcsin(np.sqrt(a))
 
 
-def preprocess(df: pd.DataFrame, rolling_window: int = 45) -> pd.DataFrame:
+def preprocess(df: pd.DataFrame, rolling_window: int = 45, reverse: bool = False) -> pd.DataFrame:
     """Full preprocessing: kinematics, outlier detection, gap marking, rolling features."""
     df = df.copy()
     df["LAT"] = pd.to_numeric(df["LAT"], errors="coerce")
@@ -51,24 +51,30 @@ def preprocess(df: pd.DataFrame, rolling_window: int = 45) -> pd.DataFrame:
     df["signaldate"] = pd.to_datetime(df["signaldate"])
     df = df.sort_values(by="signaldate").reset_index(drop=True)
 
-    df = _compute_kinematics_and_outliers(df)
+    df = _compute_kinematics_and_outliers(df, reverse)
     df = _mark_gaps(df)
     df = _compute_rolling_features(df, rolling_window=rolling_window)
 
     return df
 
 
-def _compute_kinematics_and_outliers(df: pd.DataFrame) -> pd.DataFrame:
+def _compute_kinematics_and_outliers(df: pd.DataFrame, reverse: bool) -> pd.DataFrame:
     """Compute SOG, COG, acceleration, ROT and flag outliers.
 
     Each point is compared against the last VALID point, so outliers
     don't corrupt subsequent calculations.
+    
+    If reverse is True, checks backwards for outliers.
     """
     out_sog, out_cog, out_accel, out_rot, is_outlier = [], [], [], [], []
 
     last_valid_row = None
     last_valid_sog = 0.0
     last_valid_cog = np.nan
+
+    iterator = df[::-1].iterrows() if reverse else df.iterrows()
+    kierunek = "back" if reverse else "forward"
+    count = 0
 
     for index, row in df.iterrows():
         if pd.isna(row["LAT"]) or pd.isna(row["LON"]):
@@ -89,7 +95,10 @@ def _compute_kinematics_and_outliers(df: pd.DataFrame) -> pd.DataFrame:
             last_valid_sog = 0.0
             continue
 
-        time_diff = (row["signaldate"] - last_valid_row["signaldate"]).total_seconds()
+        if reverse:
+            time_diff = (last_valid_row["signaldate"] - row["signaldate"]).total_seconds()
+        else:
+            time_diff = (row["signaldate"] - last_valid_row["signaldate"]).total_seconds()
 
         if time_diff <= 0:
             out_sog.append(last_valid_sog)
@@ -107,14 +116,20 @@ def _compute_kinematics_and_outliers(df: pd.DataFrame) -> pd.DataFrame:
             dist_meters = 0.0
 
         current_sog = (dist_meters / time_diff) * 1.94384
-        current_cog = calculate_bearing(
-            prev_pos[0], prev_pos[1], curr_pos[0], curr_pos[1]
-        )
+        
+        if reverse:
+            # Backwards
+            current_cog = calculate_bearing(curr_pos[0], curr_pos[1], prev_pos[0], prev_pos[1])
+            curr_sog_ms = current_sog * 0.51444
+            prev_sog_ms = last_valid_sog * 0.51444
+            current_accel = (prev_sog_ms - curr_sog_ms) / time_diff 
+        else:
+            current_cog = calculate_bearing(prev_pos[0], prev_pos[1], curr_pos[0], curr_pos[1])
+            curr_sog_ms = current_sog * 0.51444
+            prev_sog_ms = last_valid_sog * 0.51444
+            current_accel = (curr_sog_ms - prev_sog_ms) / time_diff
 
-        curr_sog_ms = current_sog * 0.51444
-        prev_sog_ms = last_valid_sog * 0.51444
-        current_accel = (curr_sog_ms - prev_sog_ms) / time_diff
-
+        # Rot
         p_cog = last_valid_cog if not pd.isna(last_valid_cog) else current_cog
         delta_cog = (current_cog - p_cog + 180) % 360 - 180
         current_rot = (delta_cog / time_diff) * 60
@@ -139,6 +154,13 @@ def _compute_kinematics_and_outliers(df: pd.DataFrame) -> pd.DataFrame:
             last_valid_row = row
             last_valid_sog = current_sog
             last_valid_cog = current_cog
+
+    if reverse:
+        out_sog.reverse()
+        out_cog.reverse()
+        out_accel.reverse()
+        out_rot.reverse()
+        is_outlier.reverse()
 
     df["sog_knots"] = out_sog
     df["cog"] = out_cog
