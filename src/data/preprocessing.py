@@ -71,12 +71,10 @@ def _compute_kinematics_and_outliers(df: pd.DataFrame, reverse: bool) -> pd.Data
     last_valid_row = None
     last_valid_sog = 0.0
     last_valid_cog = np.nan
-
+    
     iterator = df[::-1].iterrows() if reverse else df.iterrows()
-    kierunek = "back" if reverse else "forward"
-    count = 0
 
-    for index, row in df.iterrows():
+    for index, row in iterator:
         if pd.isna(row["LAT"]) or pd.isna(row["LON"]):
             out_sog.append(np.nan)
             out_cog.append(np.nan)

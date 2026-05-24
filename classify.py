@@ -118,7 +118,8 @@ def main() -> None:
 
     print("Preprocessing (kinematics + outliers + rolling features)...")
     rolling_window = cfg.preprocessing.get("rolling_window", 45)
-    df = preprocess(df, rolling_window=rolling_window)
+    reverse = cfg.preprocessing.get("reverse", False)
+    df = preprocess(df, rolling_window=rolling_window, reverse=reverse)
     outlier_count = int(df["outlier_gps"].sum())
     print(f"  Outliers: {outlier_count} / {len(df)}")
 
