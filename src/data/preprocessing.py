@@ -51,14 +51,26 @@ def preprocess(df: pd.DataFrame, rolling_window: int = 45, reverse: bool = False
     df["signaldate"] = pd.to_datetime(df["signaldate"])
     df = df.sort_values(by="signaldate").reset_index(drop=True)
 
-    df = _compute_kinematics_and_outliers(df, reverse)
+    if reverse:
+        df_forward = _compute_kinematics_and_outliers(df.copy(), reverse=False)
+        df_backward = _compute_kinematics_and_outliers(df.copy(), reverse=True)
+
+        df["sog_knots"] = df_forward["sog_knots"]
+        df["cog"] = df_forward["cog"]
+        df["acceleration"] = df_forward["acceleration"]
+        df["rot"] = df_forward["rot"]
+
+        df["outlier_gps"] = df_forward["outlier_gps"] & df_backward["outlier_gps"]
+    else:
+        df = _compute_kinematics_and_outliers(df, reverse=False)
+        
     df = _mark_gaps(df)
     df = _compute_rolling_features(df, rolling_window=rolling_window)
 
     return df
 
 
-def _compute_kinematics_and_outliers(df: pd.DataFrame, reverse: bool) -> pd.DataFrame:
+def _compute_kinematics_and_outliers(df: pd.DataFrame, reverse: bool = False) -> pd.DataFrame:
     """Compute SOG, COG, acceleration, ROT and flag outliers.
 
     Each point is compared against the last VALID point, so outliers
