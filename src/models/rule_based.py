@@ -75,7 +75,7 @@ DEFAULT_RULES = [
 
 
 class RuleClassifier:
-    def __init__(self, rules: list[dict] | None = None, min_episode_minutes: int = 50) -> None:
+    def __init__(self, rules: list[dict] | None = None, min_episode_minutes: dict = {"at_sea_turn": 3, "other": 20}) -> None:
         self.rules = rules or DEFAULT_RULES
         self.min_episode_minutes = min_episode_minutes
 
@@ -150,20 +150,23 @@ class RuleClassifier:
         self, states: np.ndarray, gap_boundaries: list[int]
     ) -> np.ndarray:
         result = states.copy()
-        min_len = self.min_episode_minutes
         gap_set = set(gap_boundaries)
 
         i = 0
         while i < len(result):
+            current_state = result[i]
+            
             if i in gap_set and i > 0:
                 i += 1
                 continue
             j = i
-            while j < len(result) and result[j] == result[i] and j not in gap_set:
+            while j < len(result) and result[j] == current_state and j not in gap_set:
                 j += 1
-            if j < len(result) and j in gap_set and result[j] == result[i]:
-                while j < len(result) and result[j] == result[i]:
+            if j < len(result) and j in gap_set and result[j] == current_state:
+                while j < len(result) and result[j] == current_state:
                     j += 1
+                    
+            min_len = self.min_episode_minutes.get(current_state, self.min_episode_minutes.get("other", 20))
 
             episode_len = j - i
             if episode_len < min_len and i > 0 and j < len(result):
@@ -177,7 +180,9 @@ class RuleClassifier:
         path.mkdir(parents=True, exist_ok=True)
         data = {
             "rules": self.rules,
-            "min_episode_minutes": self.min_episode_minutes,
+            "min_episode_minutes": {
+                "at_sea_turn": self.min_episode_minutes.at_sea_turn,
+                "other": self.min_episode_minutes.other},
         }
         with open(path / "rule_params.json", "w") as f:
             json.dump(data, f, indent=2)
@@ -187,8 +192,8 @@ class RuleClassifier:
         with open(path / "rule_params.json") as f:
             data = json.load(f)
         if "rules" in data:
-            return cls(rules=data["rules"], min_episode_minutes=data.get("min_episode_minutes", 50))
-        return cls(min_episode_minutes=data.get("min_episode_minutes", 50))
+            return cls(rules=data["rules"], min_episode_minutes=data.get("min_episode_minutes", {"at_sea_turn": 3, "other": 20}))
+        return cls(min_episode_minutes=data.get("min_episode_minutes", {"at_sea_turn": 3, "other": 20}))
 
 
 PORT_STATES = {"in_port", "in_port_shifting", "in_port_arrival", "in_port_departure"}
@@ -226,4 +231,5 @@ def apply_port_transitions(df: pd.DataFrame) -> pd.DataFrame:
             states[seg_end - 1] = "in_port_departure"
 
     df["predicted_state"] = states
+    df.to_csv("results/before_output.csv")
     return df

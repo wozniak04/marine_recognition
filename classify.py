@@ -73,7 +73,7 @@ def _compute_port_locodes(df: pd.DataFrame) -> tuple[list, list]:
     if locodes is None:
         return departure, destination
 
-    sea_moving = {"voyage", "at_sea_turn"}
+    sea_moving = {"voyage", "at_sea_turn", "adrift"}
     voyage_segments = []
     i = 0
     while i < n:

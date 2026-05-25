@@ -19,7 +19,7 @@ preprocessing:
   reverse: True
 
 port:
-  radius_meters: 16000.0
+  radius_meters: 2000.0
   shifting_sog_kn: 0.5
 
 # Reguly klasyfikacji — sprawdzane po kolei, pierwsza pasujaca wygrywa.
@@ -34,7 +34,10 @@ port:
 # sa przypisywane automatycznie w postprocessingu na podstawie in_port z bazy portow.
 model:
   name: rule_based
-  min_episode_minutes: 50
+  min_episode_minutes: {
+    at_sea_turn: 1,
+    other: 20
+  }
   rules:
     # 1. At Sea Turn: predkosc voyage + wysoki rot (skret na morzu)
     - state: at_sea_turn
@@ -53,14 +56,16 @@ model:
     - state: in_port
       confidence: 85
       conditions:
-        rolling_sog_kn: {max: 0.1}
-        rolling_spread_m: {max: 20.0}
+        in_port: 1
+        rolling_sog_kn: {max: 0.15}
+        rolling_spread_m: {max: 25.0}
 
     # 4. In Port Shifting: powolny celowy ruch w ograniczonym obszarze (miedzy nabrzezami)
     - state: in_port_shifting
       confidence: 75
       conditions:
-        rolling_sog_kn: {min: 0.1, max: 2.0}
+        in_port: 1
+        rolling_sog_kn: {min: 0.15, max: 2.0}
         rolling_spread_m: {max: 500.0}
         rolling_net_displacement_m: {min: 30.0}
 

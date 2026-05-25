@@ -36,7 +36,7 @@ def build_classifier(cfg: Config):
             feature_cols = None
         max_depth = cfg.model.get("max_depth", None)
         min_samples_leaf = cfg.model.get("min_samples_leaf", 5)
-        min_ep = cfg.model.get("min_episode_minutes", 50)
+        min_ep = cfg.model.get("min_episode_minutes", {"at_sea_turn": 3, "other": 20})
         return TreeClassifier(
             feature_cols=feature_cols,
             max_depth=max_depth,
@@ -47,7 +47,7 @@ def build_classifier(cfg: Config):
     rules = cfg.model.get("rules", None)
     if isinstance(rules, Config):
         rules = None
-    min_ep = cfg.model.get("min_episode_minutes", 50)
+    min_ep = cfg.model.get("min_episode_minutes", {"at_sea_turn": 3, "other": 20})
     return RuleClassifier(rules=rules, min_episode_minutes=min_ep)
 
 
