@@ -11,3 +11,5 @@ results/
 
 *.joblib
 .DS_Store
+
+.env
