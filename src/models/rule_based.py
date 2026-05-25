@@ -75,7 +75,7 @@ DEFAULT_RULES = [
 
 
 class RuleClassifier:
-    def __init__(self, rules: list[dict] | None = None, min_episode_minutes: dict = {"at_sea_turn": 3, "other": 20}) -> None:
+    def __init__(self, rules: list[dict] | None = None, min_episode_minutes: dict = {"at_sea_turn": 1, "at_port_shifting": 1, "other": 20}) -> None:
         self.rules = rules or DEFAULT_RULES
         self.min_episode_minutes = min_episode_minutes
 
@@ -182,6 +182,7 @@ class RuleClassifier:
             "rules": self.rules,
             "min_episode_minutes": {
                 "at_sea_turn": self.min_episode_minutes.at_sea_turn,
+                "at_port_shifting": self.min_episode_minutes.at_port_shifting,
                 "other": self.min_episode_minutes.other},
         }
         with open(path / "rule_params.json", "w") as f:
@@ -192,8 +193,8 @@ class RuleClassifier:
         with open(path / "rule_params.json") as f:
             data = json.load(f)
         if "rules" in data:
-            return cls(rules=data["rules"], min_episode_minutes=data.get("min_episode_minutes", {"at_sea_turn": 3, "other": 20}))
-        return cls(min_episode_minutes=data.get("min_episode_minutes", {"at_sea_turn": 3, "other": 20}))
+            return cls(rules=data["rules"], min_episode_minutes=data.get("min_episode_minutes", {"at_sea_turn": 1, "at_port_shifting": 1, "other": 20}))
+        return cls(min_episode_minutes=data.get("min_episode_minutes", {"at_sea_turn": 1, "at_port_shifting": 1, "other": 20}))
 
 
 PORT_STATES = {"in_port", "in_port_shifting", "in_port_arrival", "in_port_departure"}
