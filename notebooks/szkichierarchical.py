@@ -212,7 +212,7 @@ class DataPreprocessor:
         dcog[2:] = (raw_cog[2:] - raw_cog[1:-1] + 180) % 360 - 180
         dcog[is_gap] = np.nan
         df_proc["dcog_deg"] = dcog
-        
+        df_proc.to_csv(r"C:\Users\TMMsi\Desktop\marine_recognition\data\processed\train_preprocessed.csv", index=False)
         return df_proc
 
 def assign_in_port(df: pd.DataFrame, ports_csv_path: str, radius_m: float = 3000.0) -> pd.DataFrame:
@@ -462,7 +462,7 @@ def evaluate_pipeline(trained_dict: dict, df_true: pd.DataFrame, ports_csv_path:
 
 
     # --- PODAJ SWOJE ŚCIEŻKI TUTAJ ---
-TRAIN_CSV = r"C:\Users\TMMsi\Desktop\marine_recognition\data\raw\classified\Ship_Operation_example_dataset_classified.csv"
+TRAIN_CSV = r"C:\Users\TMMsi\Desktop\marine_recognition\data\raw\classified\Ship_Operation_example_dataset_classified_2.csv"
 PORTS_CSV = r"C:\Users\TMMsi\Desktop\marine_recognition\data\ports\EU_Port_Codes.csv"
 PREDICT_CSV = r"C:\Users\TMMsi\Desktop\marine_recognition\data\raw\unclassified\Ship_Operation_example_dataset_unclassified_source_GPS_1.csv"
     
